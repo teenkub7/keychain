@@ -1,0 +1,36 @@
+name: frontend
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_blue_plus: ^1.32.0
+  json_annotation: ^4.12.0
+  http: ^1.6.0
+  chopper: ^8.7.0
+  permission_handler: ^13.0.1
+  device_preview: ^1.2.0
+  image_picker: ^1.2.3
+  nfc_manager: ^3.3.0
+  shared_preferences: ^2.5.5
+  image: ^4.9.2
+  
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.16.0
+  swagger_dart_code_generator: ^4.1.1
+  json_serializable: ^6.14.1
+  chopper_generator: ^8.7.0
+
+flutter:
+  uses-material-design: true
