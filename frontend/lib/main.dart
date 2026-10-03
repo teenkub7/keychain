@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -27,7 +27,13 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Smart Keychain',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFFF6B00),
+          primary: const Color(0xFFFF6B00),
+          secondary: const Color(0xFF14293D),
+          surface: Colors.white,
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
         useMaterial3: true,
       ),
       home: const LoginScreen(),
@@ -113,7 +119,7 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> saveUserDataToBackend(String key, String value) async {
     if (widget.userData == null) return;
 
-    final url = Uri.parse('http://192.168.0.100/api/User/update-data');
+    final url = Uri.parse('http://localhost:5000/api/User/update-data');
     final username = widget.userData!['username'] ?? widget.userData!['userId'];
 
     try {
@@ -136,66 +142,97 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  // ฟังก์ชันสแกนและเชื่อมต่อ BLE
+  // ฟังก์ชันสแกนและเชื่อมต่อ BLE พร้อมหน้าต่าง Animation เรดาร์
   void connectToEsp32() async {
-    Map<Permission, PermissionStatus> statuses = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.location,
-    ].request();
-
-    if (statuses[Permission.bluetoothScan] != PermissionStatus.granted ||
-        statuses[Permission.bluetoothConnect] != PermissionStatus.granted) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรุณาอนุญาตสิทธิ์ Bluetooth เพื่อสแกนหาอุปกรณ์')),
-      );
-      return;
-    }
-
-    if (await FlutterBluePlus.adapterState.first != BluetoothAdapterState.on) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรุณาเปิด Bluetooth บนมือถือของคุณก่อน')),
-      );
-      return;
-    }
-
-    await _scanSubscription?.cancel();
-    await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
-
-    _scanSubscription = FlutterBluePlus.scanResults.listen((results) async {
-      for (ScanResult r in results) {
-        String deviceName = r.device.platformName.isNotEmpty
-            ? r.device.platformName
-            : r.advertisementData.advName;
-
-        if (deviceName == "ESP32_SmartKeychain" || deviceName == "Smart Keychain") {
+    showDialog(
+      context: context,
+      builder: (ctx) => _BleScanningDialog(
+        isConnected: isConnected,
+        onDisconnect: () {
+          setState(() {
+            isConnected = false;
+            targetDevice = null;
+            targetCharacteristic = null;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('ตัดการเชื่อมต่อบลูทูธเรียบร้อย'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
+        onCancelScan: () async {
           await FlutterBluePlus.stopScan();
           await _scanSubscription?.cancel();
+        },
+      ),
+    );
 
-          targetDevice = r.device;
-          await targetDevice!.connect();
+    // หากรันบน Native Mobile (Android/iOS) ให้เริ่มสแกนหา ESP32 จริง
+    if (!kIsWeb && !isConnected) {
+      try {
+        Map<Permission, PermissionStatus> statuses = await [
+          Permission.bluetoothScan,
+          Permission.bluetoothConnect,
+          Permission.location,
+        ].request();
 
-          List<BluetoothService> services = await targetDevice!.discoverServices();
-          for (var service in services) {
-            for (var c in service.characteristics) {
-              if (c.properties.write) {
-                targetCharacteristic = c;
-                if (mounted) {
-                  setState(() {
-                    isConnected = true;
-                  });
+        if (statuses[Permission.bluetoothScan] != PermissionStatus.granted ||
+            statuses[Permission.bluetoothConnect] != PermissionStatus.granted) {
+          return;
+        }
+
+        if (await FlutterBluePlus.adapterState.first != BluetoothAdapterState.on) {
+          return;
+        }
+
+        await _scanSubscription?.cancel();
+        await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
+
+        _scanSubscription = FlutterBluePlus.scanResults.listen((results) async {
+          for (ScanResult r in results) {
+            String deviceName = r.device.platformName.isNotEmpty
+                ? r.device.platformName
+                : r.advertisementData.advName;
+
+            if (deviceName == "ESP32_SmartKeychain" || deviceName == "Smart Keychain") {
+              await FlutterBluePlus.stopScan();
+              await _scanSubscription?.cancel();
+
+              targetDevice = r.device;
+              await targetDevice!.connect();
+
+              List<BluetoothService> services = await targetDevice!.discoverServices();
+              for (var service in services) {
+                for (var c in service.characteristics) {
+                  if (c.properties.write) {
+                    targetCharacteristic = c;
+                    if (mounted) {
+                      setState(() {
+                        isConnected = true;
+                      });
+                      Navigator.of(context, rootNavigator: true).maybePop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('🟢 เชื่อมต่อกับ $deviceName สำเร็จ!'),
+                          backgroundColor: const Color(0xFF16A34A),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                    syncUserDataToEsp32();
+                    break;
+                  }
                 }
-                syncUserDataToEsp32();
-                break;
               }
+              break;
             }
           }
-          break;
-        }
+        });
+      } catch (e) {
+        debugPrint("BLE Scan Exception: $e");
       }
-    });
+    }
   }
 
   void syncUserDataToEsp32() async {
@@ -229,16 +266,89 @@ class _MainScreenState extends State<MainScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.userData != null
-            ? 'Keychain ($currentUsername)'
-            : 'Smart Keychain Controller'),
-        actions: [
-          IconButton(
-            icon: Icon(
-              isConnected ? Icons.bluetooth_connected : Icons.bluetooth_searching,
-              color: isConnected ? Colors.green : Colors.grey,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        titleSpacing: 16,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF4EC),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Image.asset(
+                'assets/logo.png',
+                width: 24,
+                height: 24,
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Icons.key_rounded,
+                  color: Color(0xFFFF6B00),
+                  size: 20,
+                ),
+              ),
             ),
-            onPressed: connectToEsp32,
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Smart Keychain',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF14293D),
+                  ),
+                ),
+                Text(
+                  'ผู้ใช้: $currentUsername',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF94A3B8),
+                    fontWeight: FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: InkWell(
+              onTap: connectToEsp32,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isConnected ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isConnected ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isConnected ? Icons.bluetooth_connected_rounded : Icons.bluetooth_searching_rounded,
+                      size: 16,
+                      color: isConnected ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isConnected ? 'BLE เชื่อมต่อแล้ว' : 'สแกน BLE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isConnected ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -248,6 +358,10 @@ class _MainScreenState extends State<MainScreen> {
           HomeScreen(
             isConnected: isConnected,
             onConnectPressed: connectToEsp32,
+            username: currentUsername,
+            userData: widget.userData,
+            onNavigateToTab: _onItemTapped,
+            onSendBleData: sendBleData,
           ),
           TodoListScreen(
             username: currentUsername,
@@ -293,20 +407,335 @@ class _MainScreenState extends State<MainScreen> {
           const SettingsPage(),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.deepPurple,
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'หน้าแรก'),
-          BottomNavigationBarItem(icon: Icon(Icons.alarm), label: 'ตารางเวลา'),
-          BottomNavigationBarItem(icon: Icon(Icons.qr_code), label: 'ส่งรูป/QR'),
-          BottomNavigationBarItem(icon: Icon(Icons.nfc), label: 'NFC'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'ตั้งค่า'),
-        ],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 16,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _selectedIndex,
+          onTap: _onItemTapped,
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.white,
+          elevation: 0,
+          selectedItemColor: const Color(0xFFFF6B00),
+          unselectedItemColor: const Color(0xFF94A3B8),
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+          unselectedLabelStyle: const TextStyle(fontSize: 11),
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard_rounded),
+              activeIcon: Icon(Icons.dashboard_rounded, color: Color(0xFFFF6B00)),
+              label: 'หน้าแรก',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.alarm_rounded),
+              activeIcon: Icon(Icons.alarm_rounded, color: Color(0xFFFF6B00)),
+              label: 'ตารางเวลา',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.qr_code_2_rounded),
+              activeIcon: Icon(Icons.qr_code_2_rounded, color: Color(0xFFFF6B00)),
+              label: 'ส่งรูป/QR',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.contactless_rounded),
+              activeIcon: Icon(Icons.contactless_rounded, color: Color(0xFFFF6B00)),
+              label: 'NFC',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.settings_rounded),
+              activeIcon: Icon(Icons.settings_rounded, color: Color(0xFFFF6B00)),
+              label: 'ตั้งค่า',
+            ),
+          ],
+        ),
       ),
     );
   }
 }
+
+// -------------------------------------------------------------
+// กล่องแจ้งเตือนสแกนบลูทูธ พร้อมเรดาร์แอนิเมชัน (Radar Pulse Animation)
+// -------------------------------------------------------------
+class _BleScanningDialog extends StatefulWidget {
+  final bool isConnected;
+  final VoidCallback onDisconnect;
+  final VoidCallback? onCancelScan;
+
+  const _BleScanningDialog({
+    required this.isConnected,
+    required this.onDisconnect,
+    this.onCancelScan,
+  });
+
+  @override
+  State<_BleScanningDialog> createState() => _BleScanningDialogState();
+}
+
+class _BleScanningDialogState extends State<_BleScanningDialog>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animController;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.isConnected) {
+      // หน้าต่างเมื่อเชื่อมต่ออยู่แล้ว: ให้ผู้ใช้ดูสถานะหรือตัดการเชื่อมต่อได้
+      return Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        backgroundColor: Colors.white,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 380),
+          padding: const EdgeInsets.all(26.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF16A34A).withValues(alpha: 0.25),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.bluetooth_connected_rounded,
+                  color: Color(0xFF15803D),
+                  size: 38,
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'เชื่อมต่อบลูทูธแล้ว',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF14293D),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'เชื่อมต่อกับ ESP32_SmartKeychain สำเร็จ พร้อมส่งข้อมูลและอัปเดตหน้าจอทันที',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFE11D48),
+                        side: const BorderSide(color: Color(0xFFFECDD3)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        widget.onDisconnect();
+                      },
+                      child: const Text('ตัดการเชื่อมต่อ'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF14293D),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('เรียบร้อย'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // หน้าต่างค้นหาบลูทูธ: แสดงเรดาร์แอนิเมชันหมุน/พัลส์
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      backgroundColor: Colors.white,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 390),
+        padding: const EdgeInsets.all(26),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Radar Wave Animation
+            SizedBox(
+              width: 130,
+              height: 130,
+              child: AnimatedBuilder(
+                animation: _animController,
+                builder: (context, child) {
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // คลื่นรอบนอก วงที่ 2
+                      Transform.scale(
+                        scale: 0.6 + (_animController.value * 0.4),
+                        child: Container(
+                          width: 120,
+                          height: 120,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0xFFFF6B00).withValues(
+                                alpha: (1.0 - _animController.value) * 0.45,
+                              ),
+                              width: 2.2,
+                            ),
+                          ),
+                        ),
+                      ),
+                      // คลื่นรอบนอก วงที่ 1
+                      Transform.scale(
+                        scale: 0.4 + (_animController.value * 0.4),
+                        child: Container(
+                          width: 90,
+                          height: 90,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFFFF6B00).withValues(
+                              alpha: (1.0 - _animController.value) * 0.18,
+                            ),
+                          ),
+                        ),
+                      ),
+                      // วงกลมแกนกลางไอคอน Bluetooth
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFF7A00), Color(0xFFFF4800)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFFF6B00).withValues(alpha: 0.4),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.bluetooth_searching_rounded,
+                          color: Colors.white,
+                          size: 32,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'กำลังค้นหาอุปกรณ์ Bluetooth...',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF14293D),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'กำลังสแกนหา "ESP32_SmartKeychain" ในบริเวณใกล้เคียง',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B), height: 1.4),
+            ),
+            const SizedBox(height: 18),
+
+            // การ์ดแสดงคำแนะนำสำหรับค้นหาฮาร์ดแวร์จริง
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Row(
+                children: [
+                  SizedBox(
+                    width: 15,
+                    height: 15,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF6B00)),
+                    ),
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'กรุณาเปิดอุปกรณ์พวงกุญแจและนำมาไว้ใกล้ๆ',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF64748B),
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  widget.onCancelScan?.call();
+                },
+                child: const Text(
+                  'ยกเลิกการค้นหา',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

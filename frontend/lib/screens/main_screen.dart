@@ -49,7 +49,7 @@ class _MainScreenState extends State<MainScreen> {
   StreamSubscription<List<ScanResult>>? _scanSubscription;
 
   // 🔴 กำหนด IP Address ของ C# Backend เพียงจุดเดียวที่นี่
-  final String backendUrl = 'http://172.20.10.4:5000/api/User/update-data';
+  final String backendUrl = 'http://localhost:5000/api/User/update-data';
 
   @override
   void dispose() {
@@ -195,16 +195,89 @@ class _MainScreenState extends State<MainScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.userData != null
-            ? 'Keychain ($currentUsername)'
-            : 'Smart Keychain Controller'),
-        actions: [
-          IconButton(
-            icon: Icon(
-              isConnected ? Icons.bluetooth_connected : Icons.bluetooth_searching,
-              color: isConnected ? Colors.green : Colors.grey,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        titleSpacing: 16,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF4EC),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Image.asset(
+                'assets/logo.png',
+                width: 24,
+                height: 24,
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Icons.key_rounded,
+                  color: Color(0xFFFF6B00),
+                  size: 20,
+                ),
+              ),
             ),
-            onPressed: connectToEsp32,
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Smart Keychain',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF14293D),
+                  ),
+                ),
+                Text(
+                  'ผู้ใช้: $currentUsername',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF94A3B8),
+                    fontWeight: FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: InkWell(
+              onTap: connectToEsp32,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isConnected ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isConnected ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isConnected ? Icons.bluetooth_connected_rounded : Icons.bluetooth_searching_rounded,
+                      size: 16,
+                      color: isConnected ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isConnected ? 'BLE เชื่อมต่อแล้ว' : 'สแกน BLE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isConnected ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -214,6 +287,10 @@ class _MainScreenState extends State<MainScreen> {
           HomeScreen(
             isConnected: isConnected,
             onConnectPressed: connectToEsp32,
+            username: currentUsername,
+            userData: widget.userData,
+            onNavigateToTab: _onItemTapped,
+            onSendBleData: sendBleData,
           ),
           TodoListScreen(
             username: currentUsername,
@@ -250,19 +327,55 @@ class _MainScreenState extends State<MainScreen> {
           const SettingsPage(),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.deepPurple,
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'หน้าแรก'),
-          BottomNavigationBarItem(icon: Icon(Icons.alarm), label: 'ตารางเวลา'),
-          BottomNavigationBarItem(icon: Icon(Icons.qr_code), label: 'ส่งรูป/QR'),
-          BottomNavigationBarItem(icon: Icon(Icons.nfc), label: 'NFC'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'ตั้งค่า'),
-        ],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 16,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _selectedIndex,
+          onTap: _onItemTapped,
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.white,
+          elevation: 0,
+          selectedItemColor: const Color(0xFFFF6B00),
+          unselectedItemColor: const Color(0xFF94A3B8),
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+          unselectedLabelStyle: const TextStyle(fontSize: 11),
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard_rounded),
+              activeIcon: Icon(Icons.dashboard_rounded, color: Color(0xFFFF6B00)),
+              label: 'หน้าแรก',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.alarm_rounded),
+              activeIcon: Icon(Icons.alarm_rounded, color: Color(0xFFFF6B00)),
+              label: 'ตารางเวลา',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.qr_code_2_rounded),
+              activeIcon: Icon(Icons.qr_code_2_rounded, color: Color(0xFFFF6B00)),
+              label: 'ส่งรูป/QR',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.contactless_rounded),
+              activeIcon: Icon(Icons.contactless_rounded, color: Color(0xFFFF6B00)),
+              label: 'NFC',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.settings_rounded),
+              activeIcon: Icon(Icons.settings_rounded, color: Color(0xFFFF6B00)),
+              label: 'ตั้งค่า',
+            ),
+          ],
+        ),
       ),
     );
   }

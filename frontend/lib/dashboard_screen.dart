@@ -181,7 +181,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         const Text("ควบคุม LED", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                         Switch(
                           value: isLedOn,
-                          activeColor: Colors.amber,
+                          activeThumbColor: Colors.amber,
                           onChanged: isOnline ? (value) => toggleLed(value) : null,
                         ),
                       ],
