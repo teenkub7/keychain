@@ -68,3 +68,34 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table SensorLogs
+--
+
+CREATE TABLE IF NOT EXISTS SensorLogs (
+  Id int(11) NOT NULL AUTO_INCREMENT,
+  Username varchar(255) NOT NULL,
+  HeartRate double NOT NULL,
+  SpO2 double NOT NULL,
+  Temperature double NOT NULL,
+  Humidity double NOT NULL,
+  MeasurementType varchar(50) NOT NULL DEFAULT 'Manual_Spot',
+  RecordedAt datetime NOT NULL,
+  PRIMARY KEY (Id),
+  KEY IX_SensorLogs_Username (Username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table SensorLogs
+--
+
+INSERT INTO SensorLogs (Id, Username, HeartRate, SpO2, Temperature, Humidity, MeasurementType, RecordedAt) VALUES
+(1, 'user1', 74, 98, 28.5, 58.2, 'Manual_Spot', NOW() - INTERVAL 2 HOUR),
+(2, 'user1', 82, 97, 28.8, 59.0, 'Manual_Spot', NOW() - INTERVAL 1 HOUR),
+(3, 'user1', 76, 99, 29.1, 57.5, 'Manual_Spot', NOW() - INTERVAL 30 MINUTE),
+(4, 'user1', 72, 98, 28.6, 56.4, 'Auto_30s', NOW() - INTERVAL 90 SECOND),
+(5, 'user1', 73, 98, 28.5, 56.5, 'Auto_30s', NOW() - INTERVAL 60 SECOND),
+(6, 'user1', 71, 99, 28.4, 56.2, 'Auto_30s', NOW() - INTERVAL 30 SECOND);

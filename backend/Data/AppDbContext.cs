@@ -11,5 +11,6 @@ namespace SmartKeychainApi.Data
         }
 
         public DbSet<User> Users { get; set; }
+        public DbSet<SensorLog> SensorLogs { get; set; }
     }
 }

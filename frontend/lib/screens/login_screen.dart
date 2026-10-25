@@ -383,7 +383,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             _buildInputField(
                               controller: _usernameController,
                               label: 'ชื่อผู้ใช้ (Username)',
-                              hintText: 'เช่น user1',
+                              hintText: 'กรอกชื่อผู้ใช้งาน',
                               icon: Icons.person_outline_rounded,
                             ),
                             const SizedBox(height: 16),

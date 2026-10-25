@@ -21,7 +21,7 @@ dependencies:
   nfc_manager: ^3.3.0
   shared_preferences: ^2.5.5
   image: ^4.9.2
-  
+  fl_chart: ^0.69.0
 
 dev_dependencies:
   flutter_test:

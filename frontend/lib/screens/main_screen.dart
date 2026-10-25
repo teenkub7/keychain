@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 
 import 'login_screen.dart';
 import 'home_screen.dart';
-import 'todo_list_screen.dart';
+import 'health_sensor_screen.dart';
 import 'display_screen.dart';
 import 'nfc_screen.dart';
 import 'settings_screen.dart';
@@ -201,85 +201,28 @@ class _MainScreenState extends State<MainScreen> {
         titleSpacing: 16,
         title: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF4EC),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Image.asset(
-                'assets/logo.png',
-                width: 24,
-                height: 24,
-                errorBuilder: (context, error, stackTrace) => const Icon(
-                  Icons.key_rounded,
-                  color: Color(0xFFFF6B00),
-                  size: 20,
-                ),
+            Image.asset(
+              'assets/logo.png',
+              width: 38,
+              height: 38,
+              errorBuilder: (context, error, stackTrace) => const Icon(
+                Icons.key_rounded,
+                color: Color(0xFFFF6B00),
+                size: 32,
               ),
             ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Smart Keychain',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF14293D),
-                  ),
-                ),
-                Text(
-                  'ผู้ใช้: $currentUsername',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF94A3B8),
-                    fontWeight: FontWeight.normal,
-                  ),
-                ),
-              ],
+            const SizedBox(width: 12),
+            const Text(
+              'Smart Keychain',
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF14293D),
+                letterSpacing: -0.3,
+              ),
             ),
           ],
         ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 14),
-            child: InkWell(
-              onTap: connectToEsp32,
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isConnected ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isConnected ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isConnected ? Icons.bluetooth_connected_rounded : Icons.bluetooth_searching_rounded,
-                      size: 16,
-                      color: isConnected ? const Color(0xFF15803D) : const Color(0xFF64748B),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      isConnected ? 'BLE เชื่อมต่อแล้ว' : 'สแกน BLE',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: isConnected ? const Color(0xFF15803D) : const Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
       body: IndexedStack(
         index: _selectedIndex,
@@ -291,10 +234,6 @@ class _MainScreenState extends State<MainScreen> {
             userData: widget.userData,
             onNavigateToTab: _onItemTapped,
             onSendBleData: sendBleData,
-          ),
-          TodoListScreen(
-            username: currentUsername,
-            initialTodoList: widget.userData?['routineData'],
             onSendTodoList: (data) {
               if (data == "CLEAR" || data.isEmpty) {
                 sendBleData("T:CLEAR");
@@ -304,6 +243,10 @@ class _MainScreenState extends State<MainScreen> {
                 saveUserDataToBackend("routineData", data);
               }
             },
+          ),
+          HealthSensorScreen(
+            username: currentUsername,
+            isConnected: isConnected,
           ),
           DisplayScreen(
             initialQrData: widget.userData?['qrData'],
@@ -350,14 +293,14 @@ class _MainScreenState extends State<MainScreen> {
           unselectedLabelStyle: const TextStyle(fontSize: 11),
           items: const [
             BottomNavigationBarItem(
-              icon: Icon(Icons.dashboard_rounded),
-              activeIcon: Icon(Icons.dashboard_rounded, color: Color(0xFFFF6B00)),
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home_rounded, color: Color(0xFFFF6B00)),
               label: 'หน้าแรก',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.alarm_rounded),
-              activeIcon: Icon(Icons.alarm_rounded, color: Color(0xFFFF6B00)),
-              label: 'ตารางเวลา',
+              icon: Icon(Icons.monitor_heart_outlined),
+              activeIcon: Icon(Icons.monitor_heart_rounded, color: Color(0xFFFF6B00)),
+              label: 'สุขภาพ',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.qr_code_2_rounded),
@@ -365,12 +308,12 @@ class _MainScreenState extends State<MainScreen> {
               label: 'ส่งรูป/QR',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.contactless_rounded),
+              icon: Icon(Icons.contactless_outlined),
               activeIcon: Icon(Icons.contactless_rounded, color: Color(0xFFFF6B00)),
               label: 'NFC',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.settings_rounded),
+              icon: Icon(Icons.settings_outlined),
               activeIcon: Icon(Icons.settings_rounded, color: Color(0xFFFF6B00)),
               label: 'ตั้งค่า',
             ),
