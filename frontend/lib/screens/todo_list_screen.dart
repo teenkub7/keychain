@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../services/api/api_config.dart';
 
 class TodoItem {
   String task;
@@ -178,6 +180,15 @@ class _TodoListScreenState extends State<TodoListScreen> {
       return;
     }
 
+    final englishRegex = RegExp(r'^[a-zA-Z0-9 _.,!?:;()\-+/@#%*]+$');
+    if (!englishRegex.hasMatch(taskText)) {
+      _showCustomSnackBar(
+        message: 'กรุณากรอกชื่อกิจกรรมเป็นภาษาอังกฤษเท่านั้น',
+        isError: true,
+      );
+      return;
+    }
+
     setState(() {
       _todoList.add(TodoItem(
         task: taskText,
@@ -200,7 +211,7 @@ class _TodoListScreenState extends State<TodoListScreen> {
 
     // 1. ส่งอัปเดตลง Database ผ่าน C# API
     try {
-      final url = Uri.parse('http://localhost:5000/api/User/update-data');
+      final url = Uri.parse('${ApiConfig.userBaseUrl}/update-data');
 
       final response = await http.post(
         url,
@@ -600,8 +611,11 @@ class _TodoListScreenState extends State<TodoListScreen> {
                   controller: _taskController,
                   style: const TextStyle(fontSize: 13),
                   onSubmitted: (_) => _addTodo(),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9 _.,!?:;()\-+/@#%*]')),
+                  ],
                   decoration: InputDecoration(
-                    hintText: 'สิ่งที่ต้องทำ เช่น อ่านหนังสือ...',
+                    hintText: 'Task name (English only เช่น Meeting)...',
                     hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     filled: true,
@@ -649,6 +663,20 @@ class _TodoListScreenState extends State<TodoListScreen> {
                 ),
               ),
             ],
+          ),
+
+          const Padding(
+            padding: EdgeInsets.only(top: 6, left: 2),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded, size: 12, color: Color(0xFF94A3B8)),
+                SizedBox(width: 4),
+                Text(
+                  'รองรับเฉพาะภาษาอังกฤษ',
+                  style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                ),
+              ],
+            ),
           ),
 
           const SizedBox(height: 12),

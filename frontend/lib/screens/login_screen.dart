@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../services/api/api_config.dart';
 import '../main.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -21,7 +22,15 @@ class _LoginScreenState extends State<LoginScreen> {
   bool isConfirmPasswordVisible = false;
 
   // Base URL สำหรับเชื่อมต่อ C# Backend
-  String baseUrl = 'http://localhost:5000/api/User';
+  String get baseUrl => ApiConfig.userBaseUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    ApiConfig.loadSavedBaseUrl().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   void dispose() {
@@ -54,64 +63,305 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => isLoading = true);
 
-    final endpoint = isRegisterMode ? '$baseUrl/register' : '$baseUrl/login';
-    final url = Uri.parse(endpoint);
+    final path = isRegisterMode ? 'register' : 'login';
 
-    try {
-      final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'username': username,
-              'password': password,
-            }),
-          )
-          .timeout(const Duration(seconds: 10));
+    // รายการ Candidates ที่จะลองเชื่อมต่อ (เริ่มจาก activeBaseUrl แล้วตามด้วย candidates อื่นๆ)
+    final candidatesToTry = <String>[
+      ApiConfig.baseUrl,
+      ...ApiConfig.candidateUrls.where((u) => u != ApiConfig.baseUrl),
+    ];
 
-      final data = jsonDecode(response.body);
+    http.Response? response;
+    String? workingBaseUrl;
 
-      if (!mounted) return;
+    for (final base in candidatesToTry) {
+      try {
+        final endpoint = '$base/User/$path';
+        final url = Uri.parse(endpoint);
 
-      if (response.statusCode == 200) {
-        if (isRegisterMode) {
-          _showCustomSnackBar(
-            message: '🎉 สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ',
-            isError: false,
-          );
-          setState(() {
-            isRegisterMode = false;
-            _confirmPasswordController.clear();
-          });
+        final res = await http
+            .post(
+              url,
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'username': username,
+                'password': password,
+              }),
+            )
+            .timeout(const Duration(seconds: 4));
+
+        response = res;
+        workingBaseUrl = base;
+        ApiConfig.setBaseUrl(base);
+        break;
+      } catch (e) {
+        debugPrint('Connection attempt failed for $base: $e');
+      }
+    }
+
+    if (!mounted) return;
+
+    if (response != null) {
+      try {
+        final data = jsonDecode(response.body);
+
+        if (response.statusCode == 200) {
+          if (isRegisterMode) {
+            _showCustomSnackBar(
+              message: '🎉 สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ',
+              isError: false,
+            );
+            setState(() {
+              isRegisterMode = false;
+              _confirmPasswordController.clear();
+            });
+          } else {
+            _showCustomSnackBar(
+              message: '✨ ยินดีต้อนรับคุณ ${data['userId']}',
+              isError: false,
+            );
+
+            // เข้าสู่หน้าหลักพร้อมส่งข้อมูลผู้ใช้งาน
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => MainScreen(userData: data),
+              ),
+            );
+          }
         } else {
           _showCustomSnackBar(
-            message: '✨ ยินดีต้อนรับคุณ ${data['userId']}',
-            isError: false,
-          );
-
-          // เข้าสู่หน้าหลักพร้อมส่งข้อมูลผู้ใช้งาน
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => MainScreen(userData: data),
-            ),
+            message: data['message'] ?? 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
+            isError: true,
           );
         }
-      } else {
+      } catch (e) {
         _showCustomSnackBar(
-          message: data['message'] ?? 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ',
+          message: 'เกิดข้อผิดพลาดในการประมวลผลข้อมูลจาก Server',
           isError: true,
         );
       }
-    } catch (e) {
-      if (!mounted) return;
+    } else {
       _showCustomSnackBar(
-        message: 'ไม่สามารถติดต่อ Backend Server ($baseUrl) ได้ กรุณาตรวจสอบการเชื่อมต่อ',
+        message: 'ไม่สามารถติดต่อ Backend Server ($baseUrl) ได้ กรุณาแตะที่ "ตั้งค่า Server IP" ด้านล่าง',
         isError: true,
       );
-    } finally {
-      if (mounted) setState(() => isLoading = false);
     }
+
+    if (mounted) setState(() => isLoading = false);
+  }
+
+  // หน้าต่าง BottomSheet สำหรับตั้งค่า Server IP และทดสอบการเชื่อมต่อ
+  void _showServerConfigSheet() {
+    final ipController = TextEditingController(text: ApiConfig.baseUrl.replaceAll('/api', ''));
+    bool isTesting = false;
+    String? testResult;
+    bool testSuccess = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) => Container(
+          padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.dns_rounded, color: Color(0xFF3B82F6), size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'ตั้งค่าเชื่อมต่อ Backend Server',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF14293D),
+                          ),
+                        ),
+                        Text(
+                          'เลือกหรือระบุ IP Address ของเครื่องคอมพิวเตอร์',
+                          style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'พรีเซ็ตแนะนำ:',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildPresetChip('📱 USB (localhost:5000)', 'http://localhost:5000', ipController, setSheetState),
+                  _buildPresetChip('📶 Wi-Fi (10.26.13.87:5000)', 'http://10.26.13.87:5000', ipController, setSheetState),
+                  _buildPresetChip('🤖 Emulator (10.0.2.2:5000)', 'http://10.0.2.2:5000', ipController, setSheetState),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: ipController,
+                decoration: InputDecoration(
+                  labelText: 'Server URL (เช่น http://10.26.13.87:5000 หรือ http://localhost:5000)',
+                  labelStyle: const TextStyle(fontSize: 12),
+                  prefixIcon: const Icon(Icons.link_rounded, size: 20),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+              ),
+              if (testResult != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: testSuccess ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        testSuccess ? Icons.check_circle_rounded : Icons.error_rounded,
+                        size: 16,
+                        color: testSuccess ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          testResult!,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: testSuccess ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: isTesting
+                          ? null
+                          : () async {
+                              setSheetState(() {
+                                isTesting = true;
+                                testResult = 'กำลังทดสอบเชื่อมต่อ...';
+                              });
+                              try {
+                                var host = ipController.text.trim();
+                                if (!host.startsWith('http://') && !host.startsWith('https://')) {
+                                  host = 'http://$host';
+                                }
+                                if (host.endsWith('/')) host = host.substring(0, host.length - 1);
+                                final testUrl = Uri.parse('$host/api/Sensor/latest?username=test');
+
+                                final res = await http.get(testUrl).timeout(const Duration(seconds: 3));
+                                setSheetState(() {
+                                  isTesting = false;
+                                  testSuccess = true;
+                                  testResult = 'เชื่อมต่อ Backend สำเร็จ (Status: ${res.statusCode})';
+                                });
+                              } catch (e) {
+                                setSheetState(() {
+                                  isTesting = false;
+                                  testSuccess = false;
+                                  testResult = 'เชื่อมต่อไม่สำเร็จ: $e';
+                                });
+                              }
+                            },
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: isTesting
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('ทดสอบเชื่อมต่อ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        ApiConfig.setBaseUrl(ipController.text);
+                        Navigator.pop(ctx);
+                        setState(() {});
+                        _showCustomSnackBar(
+                          message: 'บันทึก Server IP: ${ApiConfig.baseUrl} เรียบร้อย',
+                          isError: false,
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFF6B00),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: const Text('บันทึกและใช้งาน', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPresetChip(
+    String label,
+    String targetUrl,
+    TextEditingController controller,
+    StateSetter setSheetState,
+  ) {
+    return ActionChip(
+      label: Text(label, style: const TextStyle(fontSize: 11)),
+      onPressed: () {
+        setSheetState(() {
+          controller.text = targetUrl;
+        });
+      },
+      backgroundColor: const Color(0xFFF1F5F9),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    );
   }
 
   void _showCustomSnackBar({required String message, required bool isError}) {
@@ -477,6 +727,51 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      // ปุ่มตั้งค่า Server IP / สถานะการเชื่อมต่อ
+                      InkWell(
+                        onTap: _showServerConfigSheet,
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.03),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 7,
+                                height: 7,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF10B981),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Server: ${ApiConfig.baseUrl.replaceAll('/api', '')}',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: Color(0xFF475569),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const Icon(Icons.settings_outlined, size: 14, color: Color(0xFF94A3B8)),
+                            ],
+                          ),
                         ),
                       ),
                     ],

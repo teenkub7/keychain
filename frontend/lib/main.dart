@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 
 import 'services/api/image_ble_helper.dart';
+import 'services/api/api_config.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/health_sensor_screen.dart';
@@ -119,7 +120,7 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> saveUserDataToBackend(String key, String value) async {
     if (widget.userData == null) return;
 
-    final url = Uri.parse('http://localhost:5000/api/User/update-data');
+    final url = Uri.parse('${ApiConfig.userBaseUrl}/update-data');
     final username = widget.userData!['username'] ?? widget.userData!['userId'];
 
     try {
@@ -142,25 +143,41 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  // ฟังก์ชันยกเลิกการเชื่อมต่อ BLE
+  Future<void> disconnectEsp32() async {
+    try {
+      await FlutterBluePlus.stopScan();
+      await _scanSubscription?.cancel();
+      if (targetDevice != null) {
+        await targetDevice!.disconnect();
+      }
+    } catch (e) {
+      debugPrint("Error disconnecting BLE device: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          isConnected = false;
+          targetDevice = null;
+          targetCharacteristic = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ตัดการเชื่อมต่อบลูทูธเรียบร้อย'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Color(0xFF64748B),
+          ),
+        );
+      }
+    }
+  }
+
   // ฟังก์ชันสแกนและเชื่อมต่อ BLE พร้อมหน้าต่าง Animation เรดาร์
   void connectToEsp32() async {
     showDialog(
       context: context,
       builder: (ctx) => _BleScanningDialog(
         isConnected: isConnected,
-        onDisconnect: () {
-          setState(() {
-            isConnected = false;
-            targetDevice = null;
-            targetCharacteristic = null;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('ตัดการเชื่อมต่อบลูทูธเรียบร้อย'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        },
+        onDisconnect: disconnectEsp32,
         onCancelScan: () async {
           await FlutterBluePlus.stopScan();
           await _scanSubscription?.cancel();
@@ -261,7 +278,10 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     final String currentUsername =
-        widget.userData?['username'] ?? widget.userData?['userId']?.toString() ?? 'User';
+        widget.userData?['username']?.toString() ??
+        widget.userData?['userId']?.toString() ??
+        widget.userData?['UserId']?.toString() ??
+        'User';
 
     return Scaffold(
       appBar: AppBar(
@@ -346,7 +366,30 @@ class _MainScreenState extends State<MainScreen> {
               saveUserDataToBackend("nfcData", nfcData);
             },
           ),
-          const SettingsPage(),
+          SettingsPage(
+            isConnected: isConnected,
+            connectedDeviceName: (targetDevice != null && targetDevice!.platformName.isNotEmpty)
+                ? targetDevice!.platformName
+                : null,
+            onDisconnect: disconnectEsp32,
+            onConnect: connectToEsp32,
+            onSendBleData: sendBleData,
+            username: currentUsername,
+            userData: widget.userData,
+            onLogout: () async {
+              if (isConnected && targetDevice != null) {
+                try {
+                  await targetDevice!.disconnect();
+                } catch (_) {}
+              }
+              if (!context.mounted) return;
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+                (route) => false,
+              );
+            },
+          ),
         ],
       ),
       bottomNavigationBar: Container(

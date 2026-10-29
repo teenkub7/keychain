@@ -23,7 +23,7 @@ class DisplayScreen extends StatefulWidget {
 }
 
 class _DisplayScreenState extends State<DisplayScreen> {
-  int _activeTabIndex = 0; // 0 = รูปภาพ, 1 = QR Code
+  int _activeTabIndex = 1; // 0 = รูปภาพ, 1 = QR Code (เปิดแท็บ QR เป็นค่าเริ่มต้น)
 
   @override
   Widget build(BuildContext context) {
@@ -607,7 +607,7 @@ class _TftImageSectionState extends State<_TftImageSection> {
   }
 }
 
-// ==================== ส่วนที่ 2: ส่ง QR Code TFT ====================
+// ==================== ส่วนที่ 2: ส่ง QR Code TFT (อัปโหลดรูปภาพ QR Code) ====================
 class _TftQrSection extends StatefulWidget {
   final Function(dynamic) onSendDisplay;
   final String? initialQrData;
@@ -625,55 +625,24 @@ class _TftQrSection extends StatefulWidget {
 }
 
 class _TftQrSectionState extends State<_TftQrSection> {
-  final TextEditingController _urlController = TextEditingController();
-  final TextEditingController _titleController = TextEditingController();
+  Uint8List? _selectedRawBytes;
+  String? _savedBase64Image;
   bool _isLoading = false;
-
-  final List<Map<String, String>> _qrPresets = [
-    {
-      'label': 'Instagram',
-      'asset': 'assets/Instagram_icon.png',
-      'title': 'MY INSTAGRAM',
-      'url': 'https://instagram.com/your_name',
-    },
-    {
-      'label': 'LINE',
-      'asset': 'assets/line.png',
-      'title': 'ADD LINE',
-      'url': 'https://line.me/ti/p/your_id',
-    },
-    {
-      'label': 'Facebook',
-      'asset': 'assets/facebook.png',
-      'title': 'FACEBOOK',
-      'url': 'https://facebook.com/your_profile',
-    },
-    {
-      'label': 'เบอร์โทร',
-      'asset': 'assets/phone.png',
-      'title': 'EMERGENCY CALL',
-      'url': 'tel:0812345678',
-    },
-  ];
+  bool _isImageCleared = false;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
     if (widget.initialQrData != null && widget.initialQrData!.isNotEmpty) {
-      final parts = widget.initialQrData!.split('|');
-      if (parts.isNotEmpty) _urlController.text = parts[0];
-      if (parts.length > 1) _titleController.text = parts[1];
-    } else {
-      _titleController.text = 'MY INSTAGRAM';
-      _urlController.text = 'https://instagram.com/your_name';
+      // ตรวจสอบว่าข้อมูลเดิมเป็น Base64 หรือไม่
+      final cleanData = widget.initialQrData!.contains('|') 
+          ? widget.initialQrData!.split('|')[0] 
+          : widget.initialQrData!;
+      if (!cleanData.startsWith('http://') && !cleanData.startsWith('https://')) {
+        _savedBase64Image = cleanData;
+      }
     }
-  }
-
-  @override
-  void dispose() {
-    _urlController.dispose();
-    _titleController.dispose();
-    super.dispose();
   }
 
   void _showCustomSnackBar({required String message, required bool isError}) {
@@ -738,26 +707,46 @@ class _TftQrSectionState extends State<_TftQrSection> {
     );
   }
 
-  Future<void> _sendQrCode() async {
-    final url = _urlController.text.trim();
-    final title = _titleController.text.trim();
+  // เลือกรูปภาพ QR Code จากแกลเลอรี
+  Future<void> _pickQrImage() async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+      if (pickedFile != null) {
+        final Uint8List bytes = await pickedFile.readAsBytes();
+        setState(() {
+          _selectedRawBytes = bytes;
+          _isImageCleared = false;
+        });
+        _showCustomSnackBar(message: 'เลือกรูปภาพ QR Code เรียบร้อยแล้ว', isError: false);
+      }
+    } catch (e) {
+      _showCustomSnackBar(message: 'ไม่สามารถเปิดรูปภาพได้: $e', isError: true);
+    }
+  }
 
-    if (url.isEmpty) {
-      _showCustomSnackBar(message: 'กรุณากรอก URL หรือข้อความ QR Code', isError: true);
+  // ส่งรูปภาพ QR Code ไปยังพวงกุญแจ
+  Future<void> _sendQrCode() async {
+    if (_selectedRawBytes == null && (_savedBase64Image == null || _savedBase64Image!.isEmpty)) {
+      _showCustomSnackBar(message: 'กรุณาเลือกรูปภาพ QR Code ก่อนส่งครับ', isError: true);
       return;
     }
 
     setState(() => _isLoading = true);
-    final payload = "$url|$title";
 
     try {
-      await widget.onSendDisplay("QR:$payload");
+      if (_selectedRawBytes != null) {
+        await widget.onSendDisplay(_selectedRawBytes);
+      } else if (_savedBase64Image != null) {
+        final Uint8List decodedBytes = base64Decode(_savedBase64Image!);
+        await widget.onSendDisplay(decodedBytes);
+      }
+
       if (mounted) {
-        _showCustomSnackBar(message: '✨ ส่ง QR Code เข้าพวงกุญแจเรียบร้อยแล้ว!', isError: false);
+        _showCustomSnackBar(message: '✨ ส่งรูปภาพ QR Code เข้าพวงกุญแจสำเร็จ!', isError: false);
       }
     } catch (e) {
       if (mounted) {
-        _showCustomSnackBar(message: 'เกิดข้อผิดพลาดในการส่ง QR: $e', isError: true);
+        _showCustomSnackBar(message: 'เกิดข้อผิดพลาดในการส่ง QR Code: $e', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -766,221 +755,63 @@ class _TftQrSectionState extends State<_TftQrSection> {
 
   @override
   Widget build(BuildContext context) {
-    final String currentTitle = _titleController.text.trim().isEmpty ? 'SCAN ME' : _titleController.text.trim();
-    final String currentUrl = _urlController.text.trim().isEmpty ? 'https://...' : _urlController.text.trim();
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 1. กล่องตั้งค่า QR Code
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'ตั้งค่าเนื้อหา QR Code',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF14293D),
-                ),
-              ),
-              const SizedBox(height: 12),
+        // 1. กล่องเลือกรูปภาพ QR Code
+        _buildQrUploadCard(),
+        const SizedBox(height: 14),
 
-              // ชิปแม่แบบด่วน
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                child: Row(
-                  children: _qrPresets.map((preset) {
-                    final bool isPresetSelected = _titleController.text == preset['title']!;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: InkWell(
-                        onTap: () {
-                          setState(() {
-                            if (isPresetSelected) {
-                              _titleController.clear();
-                              _urlController.clear();
-                            } else {
-                              _titleController.text = preset['title']!;
-                              _urlController.text = preset['url']!;
-                            }
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: isPresetSelected ? const Color(0xFFFFF4EC) : const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isPresetSelected ? const Color(0xFFFF6B00) : const Color(0xFFE2E8F0),
-                              width: isPresetSelected ? 1.5 : 1.0,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: Image.asset(
-                                  preset['asset']!,
-                                  width: 18,
-                                  height: 18,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (context, error, stackTrace) => const Icon(
-                                    Icons.link_rounded,
-                                    size: 16,
-                                    color: Color(0xFFFF6B00),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                preset['label']!,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: isPresetSelected ? const Color(0xFFFF6B00) : const Color(0xFF14293D),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+        // 2. ปุ่มยกเลิกรูปภาพที่เลือก (ถ้ามี)
+        if (_selectedRawBytes != null) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _selectedRawBytes = null;
+                  _isImageCleared = true;
+                });
+                _showCustomSnackBar(message: 'ยกเลิกรูปภาพ QR Code แล้ว', isError: false);
+              },
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF1F2),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFECDD3)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.close_rounded, size: 14, color: Color(0xFFE11D48)),
+                    SizedBox(width: 4),
+                    Text(
+                      'ยกเลิกรูปภาพที่เลือก',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFFE11D48),
+                        fontWeight: FontWeight.w600,
                       ),
-                    );
-                  }).toList(),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 14),
-
-              // ช่องพิมพ์ข้อความหัวข้อใต้ QR
-              TextField(
-                controller: _titleController,
-                onChanged: (_) => setState(() {}),
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                decoration: InputDecoration(
-                  labelText: 'ข้อความกำกับใต้ QR Code (บนจอ TFT)',
-                  hintText: 'เช่น MY INSTAGRAM, SCAN ME',
-                  prefixIcon: const Icon(Icons.title_rounded, size: 18, color: Color(0xFFFF6B00)),
-                  filled: true,
-                  fillColor: const Color(0xFFF8FAFC),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(0xFFFF6B00), width: 1.5),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              // ช่องพิมพ์ลิงก์ URL
-              TextField(
-                controller: _urlController,
-                onChanged: (_) => setState(() {}),
-                style: const TextStyle(fontSize: 13),
-                decoration: InputDecoration(
-                  labelText: 'ลิงก์ URL หรือข้อความที่จะให้สแกน',
-                  hintText: 'https://instagram.com/...',
-                  prefixIcon: const Icon(Icons.link_rounded, size: 18, color: Color(0xFFFF6B00)),
-                  filled: true,
-                  fillColor: const Color(0xFFF8FAFC),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: Color(0xFFFF6B00), width: 1.5),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-
-        // 2. กรอบพวงกุญแจ Smart Keychain Mockup เสมือนจริง
-        Center(
-          child: _buildKeychainDeviceFrame(
-            screenChild: Container(
-              color: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: const Icon(
-                      Icons.qr_code_2_rounded,
-                      size: 90,
-                      color: Color(0xFF14293D),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    currentTitle,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFFFF6B00),
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    currentUrl,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 8,
-                      color: Color(0xFF94A3B8),
-                    ),
-                  ),
-                ],
               ),
             ),
           ),
+          const SizedBox(height: 14),
+        ],
+
+        // 3. กรอบพวงกุญแจ Smart Keychain Mockup เสมือนจริง (แสดงเฉพาะภาพ QR Code)
+        Center(
+          child: _buildKeychainDeviceFrame(
+            screenChild: _buildQrPreview(),
+          ),
         ),
         const SizedBox(height: 24),
 
-        // 3. ปุ่มกดส่ง QR Code เข้าพวงกุญแจ
+        // 4. ปุ่มกดส่งภาพ QR Code เข้าพวงกุญแจ
         SizedBox(
           height: 50,
           child: ElevatedButton(
@@ -1008,7 +839,7 @@ class _TftQrSectionState extends State<_TftQrSection> {
                   const Icon(Icons.send_rounded, size: 20, color: Colors.white),
                 const SizedBox(width: 8),
                 Text(
-                  _isLoading ? 'กำลังส่ง QR Code...' : 'ส่ง QR Code เข้าพวงกุญแจ TFT',
+                  _isLoading ? 'กำลังส่งรูปภาพ QR Code...' : 'ส่งรูปภาพ QR Code เข้าพวงกุญแจ TFT',
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -1020,6 +851,119 @@ class _TftQrSectionState extends State<_TftQrSection> {
           ),
         ),
       ],
+    );
+  }
+
+  // การ์ดอัปโหลดรูปภาพ QR Code
+  Widget _buildQrUploadCard() {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: _isLoading ? null : _pickQrImage,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 12,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFF4EC),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.qr_code_scanner_rounded,
+                  color: Color(0xFFFF6B00),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'แตะเพื่อเลือกรูปภาพ QR Code จากเครื่อง',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF14293D),
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'รองรับ JPG, PNG (ระบบจะปรับสัดส่วนเข้าหน้าจอ LCD 240x280)',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ตัวพรีวิวรูปภาพ QR Code บนหน้าจอ
+  Widget _buildQrPreview() {
+    if (_isImageCleared && _selectedRawBytes == null) {
+      return _buildPlaceholder();
+    }
+    if (_selectedRawBytes != null) {
+      return Image.memory(
+        _selectedRawBytes!,
+        fit: BoxFit.contain,
+        width: double.infinity,
+        height: double.infinity,
+      );
+    } else if (_savedBase64Image != null && _savedBase64Image!.isNotEmpty) {
+      try {
+        return Image.memory(
+          base64Decode(_savedBase64Image!),
+          fit: BoxFit.contain,
+          width: double.infinity,
+          height: double.infinity,
+          errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
+        );
+      } catch (e) {
+        return _buildPlaceholder();
+      }
+    }
+    return _buildPlaceholder();
+  }
+
+  Widget _buildPlaceholder() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.qr_code_2_rounded, size: 48, color: Color(0xFF94A3B8)),
+          SizedBox(height: 8),
+          Text(
+            'ยังไม่ได้เลือกรูปภาพ QR Code',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF64748B),
+            ),
+          ),
+          SizedBox(height: 2),
+          Text(
+            '240 x 280 TFT LCD',
+            style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8)),
+          ),
+        ],
+      ),
     );
   }
 }

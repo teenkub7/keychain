@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'todo_list_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -146,7 +147,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     final bool isOnline = widget.isConnected;
     final String batteryText = isOnline ? '85%' : '--';
-    final String signalText = isOnline ? '-58 dBm' : '--';
     final String tempText = isOnline ? '28.5 °C' : '--';
 
     return Scaffold(
@@ -161,12 +161,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // 1. Top Greeting Header (ลบปุ่มตั้งค่าออกตามต้องการ)
+                  // 1. Top Greeting Header
                   _buildGreetingHeader(),
                   const SizedBox(height: 20),
 
-                  // 2. Virtual Smart Keychain Hero Card (ลบไอคอนออก & ลบบรรทัดที่ 3 ของ 3 ช่องออก)
-                  _buildKeychainHeroCard(isOnline, batteryText, signalText, tempText),
+                  // 2. Virtual Smart Keychain Hero Card
+                  _buildKeychainHeroCard(isOnline, batteryText, tempText),
                   const SizedBox(height: 20),
 
                   // 3. ตารางกิจกรรมประจำวันแบบ Popup Card
@@ -211,11 +211,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  // 2. การ์ดพวงกุญแจเสมือนจริง (ลบไอคอนเครื่องออก & ลบบรรทัดที่ 3 ใน 3 การ์ดย่อยออก)
+  // 2. การ์ดพวงกุญแจเสมือนจริง (ลบสัญญาณ BLE ออก เหลือ แบตเตอรี่ และ อุณหภูมิ)
   Widget _buildKeychainHeroCard(
     bool isOnline,
     String batteryText,
-    String signalText,
     String tempText,
   ) {
     return Container(
@@ -307,7 +306,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
           const SizedBox(height: 20),
 
-          // 3 แถบวัดข้อมูลสถานะ (แบตเตอรี่, บลูทูธ RSSI, อุณหภูมิ) - มีเฉพาะ 2 บรรทัด (ชื่อ + ค่า) ไม่มีบรรทัดที่ 3
+          // 2 แถบวัดข้อมูลสถานะ (แบตเตอรี่, อุณหภูมิ)
           Row(
             children: [
               Expanded(
@@ -319,17 +318,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   value: batteryText,
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildMetricItem(
-                  icon: Icons.bluetooth_rounded,
-                  iconColor: const Color(0xFF3B82F6),
-                  bgColor: const Color(0xFFEFF6FF),
-                  title: 'สัญญาณ BLE',
-                  value: signalText,
-                ),
-              ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: _buildMetricItem(
                   icon: Icons.thermostat_rounded,
@@ -643,14 +632,14 @@ class _RoutineBottomSheetModal extends StatefulWidget {
   final Function(int index) onToggle;
   final Function(String task, String time) onAdd;
   final Function(int index) onDelete;
-  final VoidCallback onOpenFullManager;
+  final VoidCallback? onOpenFullManager;
 
   const _RoutineBottomSheetModal({
     required this.todoItems,
     required this.onToggle,
     required this.onAdd,
     required this.onDelete,
-    required this.onOpenFullManager,
+    this.onOpenFullManager,
   });
 
   @override
@@ -695,8 +684,33 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
   }
 
   void _submitNewTask() {
-    if (_taskController.text.trim().isEmpty) return;
-    widget.onAdd(_taskController.text.trim(), _timeController.text.trim());
+    final taskText = _taskController.text.trim();
+    if (taskText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ กรุณากรอกชื่อกิจกรรม (Please enter activity name)'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // ตรวจสอบว่ามีเฉพาะภาษาอังกฤษ ตัวเลข และสัญลักษณ์พื้นฐาน
+    final englishRegex = RegExp(r'^[a-zA-Z0-9 _.,!?:;()\-+/@#%*]+$');
+    if (!englishRegex.hasMatch(taskText)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ รองรับเฉพาะภาษาอังกฤษเท่านั้น (English only for ESP32)'),
+          backgroundColor: Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    widget.onAdd(taskText, _timeController.text.trim());
     _taskController.clear();
     _timeController.clear();
     setState(() => _isAdding = false);
@@ -836,9 +850,12 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
                 children: [
                   TextField(
                     controller: _taskController,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9 _.,!?:;()\-+/@#%*]')),
+                    ],
                     decoration: InputDecoration(
-                      hintText: 'ชื่อกิจกรรม เช่น ประชุมทีม, กินยา',
-                      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                      hintText: 'Activity name (e.g. Meeting, Workout, Medicine)',
+                      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 12.5),
                       isDense: true,
                       filled: true,
                       fillColor: Colors.white,
@@ -850,6 +867,23 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
                         borderRadius: BorderRadius.circular(12),
                         borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
                       ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFFF6B00), width: 1.5),
+                      ),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 5, left: 2),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline_rounded, size: 12, color: Color(0xFF94A3B8)),
+                        SizedBox(width: 4),
+                        Text(
+                          'รองรับเฉพาะภาษาอังกฤษและตัวเลข (English only for ESP32)',
+                          style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -993,24 +1027,12 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
           const SizedBox(height: 10),
           const Divider(height: 1, color: Color(0xFFF1F5F9)),
 
-          // 6. ปุ่มด้านล่าง (จัดการเต็มรูปแบบ)
+          // 6. แถบสรุปจำนวนรายการด้านล่าง
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${items.length} รายการทั้งหมด',
-                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
-                ),
-                TextButton(
-                  onPressed: widget.onOpenFullManager,
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF64748B),
-                  ),
-                  child: const Text('จัดการหน้าเต็ม ->', style: TextStyle(fontSize: 12)),
-                ),
-              ],
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+            child: Text(
+              '${items.length} รายการทั้งหมด',
+              style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
             ),
           ),
         ],

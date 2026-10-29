@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
+import '../services/api/api_config.dart';
 
 import 'login_screen.dart';
 import 'home_screen.dart';
@@ -48,8 +49,8 @@ class _MainScreenState extends State<MainScreen> {
   bool isConnected = false;
   StreamSubscription<List<ScanResult>>? _scanSubscription;
 
-  // 🔴 กำหนด IP Address ของ C# Backend เพียงจุดเดียวที่นี่
-  final String backendUrl = 'http://localhost:5000/api/User/update-data';
+  // 🔴 Base URL ของ C# Backend
+  String get backendUrl => '${ApiConfig.userBaseUrl}/update-data';
 
   @override
   void dispose() {
@@ -98,6 +99,34 @@ class _MainScreenState extends State<MainScreen> {
       }
     } catch (e) {
       debugPrint("Failed to update data on C# API: $e");
+    }
+  }
+
+  // ฟังก์ชันยกเลิกการเชื่อมต่อ BLE
+  Future<void> disconnectEsp32() async {
+    try {
+      await FlutterBluePlus.stopScan();
+      await _scanSubscription?.cancel();
+      if (targetDevice != null) {
+        await targetDevice!.disconnect();
+      }
+    } catch (e) {
+      debugPrint("Error disconnecting BLE device: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          isConnected = false;
+          targetDevice = null;
+          targetCharacteristic = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ตัดการเชื่อมต่อบลูทูธเรียบร้อย'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Color(0xFF64748B),
+          ),
+        );
+      }
     }
   }
 
@@ -191,7 +220,10 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     final String currentUsername =
-        widget.userData?['username'] ?? widget.userData?['userId']?.toString() ?? 'User';
+        widget.userData?['username']?.toString() ??
+        widget.userData?['userId']?.toString() ??
+        widget.userData?['UserId']?.toString() ??
+        'User';
 
     return Scaffold(
       appBar: AppBar(
@@ -267,7 +299,30 @@ class _MainScreenState extends State<MainScreen> {
               saveUserDataToBackend("nfcData", nfcData);
             },
           ),
-          const SettingsPage(),
+          SettingsPage(
+            isConnected: isConnected,
+            connectedDeviceName: (targetDevice != null && targetDevice!.platformName.isNotEmpty)
+                ? targetDevice!.platformName
+                : null,
+            onDisconnect: disconnectEsp32,
+            onConnect: connectToEsp32,
+            onSendBleData: sendBleData,
+            username: currentUsername,
+            userData: widget.userData,
+            onLogout: () async {
+              if (isConnected && targetDevice != null) {
+                try {
+                  await targetDevice!.disconnect();
+                } catch (_) {}
+              }
+              if (!context.mounted) return;
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+                (route) => false,
+              );
+            },
+          ),
         ],
       ),
       bottomNavigationBar: Container(

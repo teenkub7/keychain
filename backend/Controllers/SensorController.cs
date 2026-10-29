@@ -36,7 +36,10 @@ namespace SmartKeychainApi.Controllers
                 Temperature = request.Temperature,
                 Humidity = request.Humidity,
                 MeasurementType = string.IsNullOrWhiteSpace(request.MeasurementType) ? "Manual_Spot" : request.MeasurementType,
-                RecordedAt = DateTime.UtcNow
+                RecordedAt = TimeZoneInfo.ConvertTimeFromUtc(
+                    DateTime.UtcNow,
+                    TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time")
+                )
             };
 
             _context.SensorLogs.Add(log);
