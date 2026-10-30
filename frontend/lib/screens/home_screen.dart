@@ -1,6 +1,39 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'todo_list_screen.dart';
+
+// Model เรียบง่ายเก็บเฉพาะเวลาและกิจกรรม
+class TodoItem {
+  String task;
+  String time;
+
+  TodoItem({
+    required this.task,
+    required this.time,
+  });
+
+  factory TodoItem.fromString(String raw) {
+    String trimmed = raw.trim();
+    RegExp timeReg = RegExp(r'^(\d{1,2}:\d{2})\s*(.*)$');
+    var match = timeReg.firstMatch(trimmed);
+
+    if (match != null) {
+      return TodoItem(
+        time: match.group(1) ?? '',
+        task: match.group(2) ?? '',
+      );
+    } else {
+      return TodoItem(
+        time: '',
+        task: trimmed,
+      );
+    }
+  }
+
+  String toFormattedString() {
+    return time.isNotEmpty ? '$time $task' : task;
+  }
+}
 
 class HomeScreen extends StatefulWidget {
   final bool isConnected;
@@ -10,6 +43,8 @@ class HomeScreen extends StatefulWidget {
   final Function(int index)? onNavigateToTab;
   final Function(String payload)? onSendBleData;
   final Function(String data)? onSendTodoList;
+  final Function(String newRoutineData)? onUpdateDatabaseRoutine;
+  final Stream<String>? bleNotifyStream;
 
   const HomeScreen({
     super.key,
@@ -20,6 +55,8 @@ class HomeScreen extends StatefulWidget {
     this.onNavigateToTab,
     this.onSendBleData,
     this.onSendTodoList,
+    this.onUpdateDatabaseRoutine,
+    this.bleNotifyStream,
   });
 
   @override
@@ -31,6 +68,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   late Animation<double> _pulseScale;
 
   List<TodoItem> _todoItems = [];
+  StreamSubscription<String>? _bleSubscription;
 
   @override
   void initState() {
@@ -44,6 +82,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
 
     _parseRoutineData();
+    _setupBleListener();
+
+    // ซิงก์ทันทีถ้าต่อบลูทูธอยู่แล้วตั้งแต่เปิดหน้า
+    if (widget.isConnected) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _syncTodoListToESP32();
+      });
+    }
   }
 
   @override
@@ -52,6 +98,34 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (oldWidget.userData?['routineData'] != widget.userData?['routineData']) {
       _parseRoutineData();
     }
+    if (oldWidget.bleNotifyStream != widget.bleNotifyStream) {
+      _setupBleListener();
+    }
+
+    // 🟢 ถ้าเพิ่งเชื่อมต่อ BLE สำเร็จ ให้ดึงข้อมูลในแอปส่งไป ESP32 ทันที!
+    if (!oldWidget.isConnected && widget.isConnected) {
+      _syncTodoListToESP32();
+    }
+  }
+
+  void _setupBleListener() {
+    _bleSubscription?.cancel();
+    _bleSubscription = widget.bleNotifyStream?.listen((data) {
+      final trimmed = data.trim();
+      if (trimmed.startsWith("DEL_T:")) {
+        String deletedText = trimmed.substring(6).trim();
+        print(">> 📥 ESP32 Auto-Deleted Item: $deletedText");
+
+        setState(() {
+          _todoItems.removeWhere((item) {
+            String fullText = item.toFormattedString();
+            return fullText == deletedText || item.task == deletedText;
+          });
+        });
+
+        _saveRoutineToDatabaseAndSync();
+      }
+    });
   }
 
   void _parseRoutineData() {
@@ -67,39 +141,49 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
-  void _toggleTodoItem(int index) {
-    setState(() {
-      _todoItems[index].isDone = !_todoItems[index].isDone;
-    });
+  // อัปเดต Database โดยถ้าไม่มีรายการเหลือ จะเซฟเป็นค่าว่าง "" (ไม่ใช้คำว่า CLEAR)
+  void _saveRoutineToDatabaseAndSync() {
+    String formattedString = _todoItems.map((e) => e.toFormattedString()).join('\n');
+    widget.onUpdateDatabaseRoutine?.call(formattedString);
+    _syncTodoListToESP32();
+  }
 
-    final formatted = _todoItems.map((item) => item.toFormattedString()).join('\n');
-    widget.onSendTodoList?.call(formatted);
+  Future<void> _syncTodoListToESP32() async {
+    if (!widget.isConnected) return;
+
+    // 1. ส่งเวลาปัจจุบันไปตั้งค่านาฬิกาให้ ESP32
+    final now = DateTime.now();
+    final timeStr = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}";
+    widget.onSendBleData?.call("TIME:$timeStr");
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    // 2. ล้างรายการเดิมบน ESP32
+    widget.onSendTodoList?.call('T:CLEAR');
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    // 3. ทยอยส่งรายการทั้งหมดไปยัง ESP32
+    for (var item in _todoItems) {
+      widget.onSendTodoList?.call('T:ADD:${item.toFormattedString()}');
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
   }
 
   void _addTodoItem(String task, String time) {
     if (task.trim().isEmpty) return;
-
-    final newItem = TodoItem(task: task.trim(), time: time.trim(), isDone: false);
+    final newItem = TodoItem(task: task.trim(), time: time.trim());
     setState(() {
       _todoItems.add(newItem);
     });
-
-    final formatted = _todoItems.map((item) => item.toFormattedString()).join('\n');
-    widget.onSendTodoList?.call(formatted);
+    _saveRoutineToDatabaseAndSync();
   }
 
   void _deleteTodoItem(int index) {
     setState(() {
       _todoItems.removeAt(index);
     });
-
-    final formatted = _todoItems.isEmpty
-        ? 'CLEAR'
-        : _todoItems.map((item) => item.toFormattedString()).join('\n');
-    widget.onSendTodoList?.call(formatted);
+    _saveRoutineToDatabaseAndSync();
   }
 
-  // เปิด Popup ตารางกิจกรรมประจำวัน
   void _showRoutinePopup() {
     showModalBottomSheet(
       context: context,
@@ -107,15 +191,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       backgroundColor: Colors.transparent,
       builder: (ctx) => _RoutineBottomSheetModal(
         todoItems: _todoItems,
-        onToggle: (index) {
-          _toggleTodoItem(index);
-        },
-        onAdd: (task, time) {
-          _addTodoItem(task, time);
-        },
-        onDelete: (index) {
-          _deleteTodoItem(index);
-        },
+        onAdd: _addTodoItem,
+        onDelete: _deleteTodoItem,
         onOpenFullManager: () async {
           Navigator.of(ctx).pop();
           await Navigator.of(context).push(
@@ -139,6 +216,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   void dispose() {
+    _bleSubscription?.cancel();
     _pulseController.dispose();
     super.dispose();
   }
@@ -147,6 +225,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     final bool isOnline = widget.isConnected;
     final String batteryText = isOnline ? '85%' : '--';
+    final String signalText = isOnline ? '-58 dBm' : '--';
     final String tempText = isOnline ? '28.5 °C' : '--';
 
     return Scaffold(
@@ -161,15 +240,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // 1. Top Greeting Header
                   _buildGreetingHeader(),
                   const SizedBox(height: 20),
-
-                  // 2. Virtual Smart Keychain Hero Card
-                  _buildKeychainHeroCard(isOnline, batteryText, tempText),
+                  _buildKeychainHeroCard(isOnline, batteryText, signalText, tempText),
                   const SizedBox(height: 20),
-
-                  // 3. ตารางกิจกรรมประจำวันแบบ Popup Card
                   _buildDailyRoutineCard(),
                   const SizedBox(height: 24),
                 ],
@@ -181,7 +255,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  // 1. Header ต้อนรับ (ลบปุ่มตั้งค่าออกแล้ว)
   Widget _buildGreetingHeader() {
     final String displayName = widget.username.isNotEmpty ? widget.username : 'User';
 
@@ -211,10 +284,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  // 2. การ์ดพวงกุญแจเสมือนจริง (ลบสัญญาณ BLE ออก เหลือ แบตเตอรี่ และ อุณหภูมิ)
   Widget _buildKeychainHeroCard(
     bool isOnline,
     String batteryText,
+    String signalText,
     String tempText,
   ) {
     return Container(
@@ -234,7 +307,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // แถวหัวการ์ด: ไม่มีไอคอนซ้ำซ้อน มีเฉพาะชื่ออุปกรณ์ + ชิปสถานะ
           Row(
             children: [
               Expanded(
@@ -268,7 +340,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 ),
               ),
               const SizedBox(width: 8),
-              // ชิปสถานะออนไลน์ / ออฟไลน์
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
@@ -306,7 +377,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
           const SizedBox(height: 20),
 
-          // 2 แถบวัดข้อมูลสถานะ (แบตเตอรี่, อุณหภูมิ)
           Row(
             children: [
               Expanded(
@@ -318,7 +388,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   value: batteryText,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildMetricItem(
+                  icon: Icons.bluetooth_rounded,
+                  iconColor: const Color(0xFF3B82F6),
+                  bgColor: const Color(0xFFEFF6FF),
+                  title: 'สัญญาณ BLE',
+                  value: signalText,
+                ),
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: _buildMetricItem(
                   icon: Icons.thermostat_rounded,
@@ -335,7 +415,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           const Divider(color: Color(0xFFF1F5F9), height: 1),
           const SizedBox(height: 14),
 
-          // แถวสถานะบลูทูธ & ปุ่มสแกนบลูทูธ
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -381,7 +460,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ),
               const SizedBox(width: 10),
 
-              // ปุ่มสแกนบลูทูธ
               widget.isConnected
                   ? Material(
                       color: Colors.transparent,
@@ -481,7 +559,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  // วิดเจ็ตกล่องแสดงข้อมูลตัวเลขย่อย (Metric Box) - มีเฉพาะ 2 บรรทัด (ชื่อ + ค่า) ไม่มีบรรทัดที่ 3
   Widget _buildMetricItem({
     required IconData icon,
     required Color iconColor,
@@ -530,10 +607,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  // 3. การ์ดตารางกิจกรรมประจำวันแบบ Popup Card (แตะแล้วเปิด Popup ทันที)
   Widget _buildDailyRoutineCard() {
-    final completedCount = _todoItems.where((i) => i.isDone).length;
-
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(22),
@@ -584,7 +658,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     Text(
                       _todoItems.isEmpty
                           ? 'ยังไม่มีตารางเวลาที่ตั้งไว้ • แตะเพื่อเปิด'
-                          : '(${_todoItems.length} รายการ, สำเร็จ $completedCount) • แตะเพื่อเปิดดู',
+                          : '(${_todoItems.length} รายการที่ตั้งไว้) • แตะเพื่อเปิดดู',
                       style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -624,22 +698,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 }
 
-// =========================================================================
-// 📋 POPUP MODAL: ตารางกิจกรรมประจำวัน (Daily Routine Bottom Sheet Popup)
-// =========================================================================
 class _RoutineBottomSheetModal extends StatefulWidget {
   final List<TodoItem> todoItems;
-  final Function(int index) onToggle;
   final Function(String task, String time) onAdd;
   final Function(int index) onDelete;
-  final VoidCallback? onOpenFullManager;
+  final VoidCallback onOpenFullManager;
 
   const _RoutineBottomSheetModal({
     required this.todoItems,
-    required this.onToggle,
     required this.onAdd,
     required this.onDelete,
-    this.onOpenFullManager,
+    required this.onOpenFullManager,
   });
 
   @override
@@ -684,33 +753,8 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
   }
 
   void _submitNewTask() {
-    final taskText = _taskController.text.trim();
-    if (taskText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('⚠️ กรุณากรอกชื่อกิจกรรม (Please enter activity name)'),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    // ตรวจสอบว่ามีเฉพาะภาษาอังกฤษ ตัวเลข และสัญลักษณ์พื้นฐาน
-    final englishRegex = RegExp(r'^[a-zA-Z0-9 _.,!?:;()\-+/@#%*]+$');
-    if (!englishRegex.hasMatch(taskText)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('⚠️ รองรับเฉพาะภาษาอังกฤษเท่านั้น (English only for ESP32)'),
-          backgroundColor: Color(0xFFEF4444),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    widget.onAdd(taskText, _timeController.text.trim());
+    if (_taskController.text.trim().isEmpty) return;
+    widget.onAdd(_taskController.text.trim(), _timeController.text.trim());
     _taskController.clear();
     _timeController.clear();
     setState(() => _isAdding = false);
@@ -719,7 +763,6 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
   @override
   Widget build(BuildContext context) {
     final items = widget.todoItems;
-    final completedCount = items.where((i) => i.isDone).length;
 
     return Container(
       constraints: BoxConstraints(
@@ -746,7 +789,6 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. Drag Handle ด้านบน
           Center(
             child: Container(
               margin: const EdgeInsets.only(top: 10, bottom: 6),
@@ -759,7 +801,6 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
             ),
           ),
 
-          // 2. Header Popup + ปุ่มปิด
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 6, 12, 12),
             child: Row(
@@ -806,14 +847,13 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
 
           const Divider(height: 1, color: Color(0xFFF1F5F9)),
 
-          // 3. แถบสรุปความคืบหน้า
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'ความคืบหน้า ($completedCount/${items.length})',
+                  'รายการทั้งหมด (${items.length})',
                   style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
@@ -835,7 +875,6 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
             ),
           ),
 
-          // 4. ฟอร์มเพิ่มกิจกรรมใหม่ (ถ้ากดเพิ่ม)
           if (_isAdding)
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
@@ -850,12 +889,9 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
                 children: [
                   TextField(
                     controller: _taskController,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9 _.,!?:;()\-+/@#%*]')),
-                    ],
                     decoration: InputDecoration(
-                      hintText: 'Activity name (e.g. Meeting, Workout, Medicine)',
-                      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 12.5),
+                      hintText: 'ชื่อกิจกรรม เช่น ประชุมทีม, กินยา',
+                      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
                       isDense: true,
                       filled: true,
                       fillColor: Colors.white,
@@ -867,23 +903,6 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
                         borderRadius: BorderRadius.circular(12),
                         borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
                       ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFFF6B00), width: 1.5),
-                      ),
-                    ),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.only(top: 5, left: 2),
-                    child: Row(
-                      children: [
-                        Icon(Icons.info_outline_rounded, size: 12, color: Color(0xFF94A3B8)),
-                        SizedBox(width: 4),
-                        Text(
-                          'รองรับเฉพาะภาษาอังกฤษและตัวเลข (English only for ESP32)',
-                          style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
-                        ),
-                      ],
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -935,7 +954,6 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
               ),
             ),
 
-          // 5. รายการกิจกรรม ToDo Items
           Flexible(
             child: items.isEmpty
                 ? const Padding(
@@ -958,60 +976,44 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
                       return Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                         decoration: BoxDecoration(
-                          color: item.isDone ? const Color(0xFFF8FAFC) : Colors.white,
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
-                            color: item.isDone ? const Color(0xFFE2E8F0) : const Color(0xFFFFE8D6),
+                            color: const Color(0xFFFFE8D6),
                           ),
                         ),
                         child: Row(
                           children: [
-                            InkWell(
-                              onTap: () {
-                                widget.onToggle(index);
-                                setState(() {});
-                              },
-                              borderRadius: BorderRadius.circular(20),
-                              child: Padding(
-                                padding: const EdgeInsets.all(4),
-                                child: Icon(
-                                  item.isDone ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                                  size: 20,
-                                  color: item.isDone ? const Color(0xFF10B981) : const Color(0xFFFF6B00),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
                             if (item.time.isNotEmpty) ...[
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFFFF4EC),
-                                  borderRadius: BorderRadius.circular(6),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
                                   item.time,
                                   style: const TextStyle(
-                                    fontSize: 11.5,
+                                    fontSize: 12,
                                     fontWeight: FontWeight.bold,
                                     color: Color(0xFFFF6B00),
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 10),
                             ],
                             Expanded(
                               child: Text(
                                 item.task,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: item.isDone ? const Color(0xFF94A3B8) : const Color(0xFF14293D),
-                                  decoration: item.isDone ? TextDecoration.lineThrough : null,
+                                style: const TextStyle(
+                                  fontSize: 13.5,
+                                  color: Color(0xFF14293D),
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ),
                             IconButton(
-                              icon: Icon(Icons.delete_outline_rounded, size: 18, color: Colors.grey.shade400),
+                              icon: Icon(Icons.delete_outline_rounded, size: 20, color: Colors.grey.shade400),
                               onPressed: () {
                                 widget.onDelete(index);
                                 setState(() {});
@@ -1027,12 +1029,23 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
           const SizedBox(height: 10),
           const Divider(height: 1, color: Color(0xFFF1F5F9)),
 
-          // 6. แถบสรุปจำนวนรายการด้านล่าง
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-            child: Text(
-              '${items.length} รายการทั้งหมด',
-              style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${items.length} รายการทั้งหมด',
+                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+                ),
+                TextButton(
+                  onPressed: widget.onOpenFullManager,
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF64748B),
+                  ),
+                  child: const Text('จัดการหน้าเต็ม ->', style: TextStyle(fontSize: 12)),
+                ),
+              ],
             ),
           ),
         ],

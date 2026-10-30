@@ -57,9 +57,15 @@ class _MainScreenState extends State<MainScreen> {
   bool isConnected = false;
   StreamSubscription<List<ScanResult>>? _scanSubscription;
 
+  // 🟢 1. สร้าง StreamController ไว้ส่งสัญญาณ BLE Notify ไปยัง HomeScreen
+  final StreamController<String> _bleNotifyController = StreamController<String>.broadcast();
+  StreamSubscription<List<int>>? _valueSubscription;
+
   @override
   void dispose() {
     _scanSubscription?.cancel();
+    _valueSubscription?.cancel();
+    _bleNotifyController.close();
     super.dispose();
   }
 
@@ -148,6 +154,7 @@ class _MainScreenState extends State<MainScreen> {
     try {
       await FlutterBluePlus.stopScan();
       await _scanSubscription?.cancel();
+      _valueSubscription?.cancel();
       if (targetDevice != null) {
         await targetDevice!.disconnect();
       }
@@ -222,8 +229,24 @@ class _MainScreenState extends State<MainScreen> {
               List<BluetoothService> services = await targetDevice!.discoverServices();
               for (var service in services) {
                 for (var c in service.characteristics) {
-                  if (c.properties.write) {
+                  // เช็ค Characteristic ที่รองรับ Notify, Indicate หรือ Write
+                  if (c.properties.notify || c.properties.indicate || c.properties.write) {
                     targetCharacteristic = c;
+                    
+                    // 🟢 2. เปิดระบบรับ Notification จาก ESP32
+                    if (c.properties.notify || c.properties.indicate) {
+                      await c.setNotifyValue(true);
+                      _valueSubscription?.cancel();
+                      _valueSubscription = c.lastValueStream.listen((value) {
+                        if (value.isNotEmpty) {
+                          String message = utf8.decode(value).trim();
+                          debugPrint(">>> 📥 BLE Notification Received: $message");
+                          // ยิงข้อความที่ได้จาก ESP32 เข้า StreamController
+                          _bleNotifyController.add(message);
+                        }
+                      });
+                    }
+
                     if (mounted) {
                       setState(() {
                         isConnected = true;
@@ -317,6 +340,7 @@ class _MainScreenState extends State<MainScreen> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
+          // 🟢 3. ส่ง bleNotifyStream และ onUpdateDatabaseRoutine ไปยัง HomeScreen
           HomeScreen(
             isConnected: isConnected,
             onConnectPressed: connectToEsp32,
@@ -324,9 +348,20 @@ class _MainScreenState extends State<MainScreen> {
             userData: widget.userData,
             onNavigateToTab: _onItemTapped,
             onSendBleData: sendBleData,
+            bleNotifyStream: _bleNotifyController.stream,
+            
+            // 1. อัปเดต Database เมื่อมีการลบ/แก้ไข (ถ้าเป็นค่าว่าง จะล้าง Database เป็น "")
+            onUpdateDatabaseRoutine: (newRoutine) {
+              String cleanRoutine = (newRoutine == "CLEAR" || newRoutine == "T:CLEAR") ? "" : newRoutine;
+              saveUserDataToBackend("routineData", cleanRoutine);
+            },
+            
+            // 2. จัดการคำสั่งส่ง BLE และแยกแยะการบันทึก Database ไม่ให้ติด T:CLEAR
             onSendTodoList: (data) {
-              if (data == "CLEAR" || data.isEmpty) {
+              if (data == "CLEAR" || data == "T:CLEAR" || data.isEmpty) {
+                // ส่งสั่งล้างหน้าจอให้ ESP32
                 sendBleData("T:CLEAR");
+                // แต่เซฟลง Database เป็นค่าว่าง "" เท่านั้น (ไม่เซฟคำว่า CLEAR)
                 saveUserDataToBackend("routineData", "");
               } else {
                 sendBleData("T:$data");
