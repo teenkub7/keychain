@@ -227,7 +227,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 runSpacing: 8,
                 children: [
                   _buildPresetChip('📱 USB (localhost:5000)', 'http://localhost:5000', ipController, setSheetState),
-                  _buildPresetChip('📶 Wi-Fi (10.26.13.87:5000)', 'http://10.26.13.87:5000', ipController, setSheetState),
+                  _buildPresetChip('📶 Wi-Fi (172.20.10.4:5000)', 'http://172.20.10.4:5000', ipController, setSheetState),
                   _buildPresetChip('🤖 Emulator (10.0.2.2:5000)', 'http://10.0.2.2:5000', ipController, setSheetState),
                 ],
               ),
@@ -235,7 +235,7 @@ class _LoginScreenState extends State<LoginScreen> {
               TextField(
                 controller: ipController,
                 decoration: InputDecoration(
-                  labelText: 'Server URL (เช่น http://10.26.13.87:5000 หรือ http://localhost:5000)',
+                  labelText: 'Server URL (เช่น http://172.20.10.4:5000 หรือ http://localhost:5000)',
                   labelStyle: const TextStyle(fontSize: 12),
                   prefixIcon: const Icon(Icons.link_rounded, size: 20),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),

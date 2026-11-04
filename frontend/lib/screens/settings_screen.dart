@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:nfc_manager/nfc_manager.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'login_screen.dart';
@@ -23,6 +22,7 @@ class SettingsPage extends StatefulWidget {
   final VoidCallback? onDisconnect;
   final VoidCallback? onConnect;
   final Function(String payload)? onSendBleData;
+  final Future<void> Function()? onSyncTime;
   final String? username;
   final Map<String, dynamic>? userData;
   final VoidCallback? onLogout;
@@ -34,6 +34,7 @@ class SettingsPage extends StatefulWidget {
     this.onDisconnect,
     this.onConnect,
     this.onSendBleData,
+    this.onSyncTime,
     this.username = 'User',
     this.userData,
     this.onLogout,
@@ -45,7 +46,6 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   // สถานะฮาร์ดแวร์และสิทธิ์
-  bool _isNfcAvailable = false;
   PermissionStatus _bluetoothStatus = PermissionStatus.denied;
   PermissionStatus _locationStatus = PermissionStatus.denied;
   bool _autoConnectDevice = false;
@@ -81,16 +81,14 @@ class _SettingsPageState extends State<SettingsPage> {
     return '$seconds วิ';
   }
 
-  // ตรวจสอบความพร้อมของระบบ NFC และ สิทธิ์ต่างๆ
+  // ตรวจสอบความพร้อมของสิทธิ์ต่างๆ
   Future<void> _checkDeviceCapabilities() async {
     try {
-      final nfcAvailable = await NfcManager.instance.isAvailable();
       final btStatus = await Permission.bluetoothConnect.status;
       final locStatus = await Permission.location.status;
 
       if (mounted) {
         setState(() {
-          _isNfcAvailable = nfcAvailable;
           _bluetoothStatus = btStatus;
           _locationStatus = locStatus;
         });
@@ -278,7 +276,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   _buildDisplayAndPowerCard(),
                   const SizedBox(height: 22),
 
-                  // 3. การ์ดฮาร์ดแวร์และสิทธิ์ในระบบ (NFC & Permissions)
+                  // 3. การ์ดสิทธิ์ในระบบ (Permissions)
                   _buildSectionTitle('ระบบและสิทธิ์การใช้งาน', Icons.shield_outlined),
                   const SizedBox(height: 10),
                   _buildPermissionsCard(),
@@ -385,7 +383,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'ความสว่างหน้าจอ TFT',
+                      'ความสว่างหน้าจอ',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
@@ -518,7 +516,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'เวลาพักหน้าจอ (Sleep Timeout)',
+                      'เวลาพักหน้าจอ',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
@@ -526,7 +524,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                     Text(
-                      'ดับหน้าจอเมื่อไม่ได้ใช้งานเพื่อประหยัดแบตเตอรี่',
+                      'ดับหน้าจอเมื่อไม่ได้ใช้งาน',
                       style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                     ),
                   ],
@@ -629,12 +627,66 @@ class _SettingsPageState extends State<SettingsPage> {
               );
             },
           ),
+
+          const SizedBox(height: 18),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          const SizedBox(height: 16),
+
+          // ปุ่มซิงค์เวลาของพวงกุญแจกับเวลาปัจจุบันของมือถือ
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.access_time_filled_rounded,
+                  color: Color(0xFF2563EB),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ซิงค์เวลานาฬิกากับมือถือ',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF14293D),
+                      ),
+                    ),
+                    Text(
+                      'อัปเดตเวลานาฬิกาบนพวงกุญแจให้ตรงกับมือถือ',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: widget.isConnected ? () => widget.onSyncTime?.call() : null,
+                icon: const Icon(Icons.sync_rounded, size: 16),
+                label: const Text('ซิงค์เวลา', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  // การ์ดฮาร์ดแวร์และสิทธิ์ในระบบ (NFC & Permissions)
+  // การ์ดสิทธิ์ในระบบ (Permissions)
   Widget _buildPermissionsCard() {
     return Material(
       color: Colors.white,
@@ -654,30 +706,6 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         child: Column(
           children: [
-            // สถานะ NFC
-            _buildPermissionTile(
-              icon: Icons.nfc_rounded,
-              iconColor: _isNfcAvailable ? const Color(0xFF10B981) : const Color(0xFF94A3B8),
-              title: 'สถานะระบบ NFC',
-              subtitle: _isNfcAvailable ? 'พร้อมใช้งานสำหรับแตะบัตร/แท็ก' : 'ไม่รองรับ หรือยังไม่ได้เปิด NFC',
-              statusWidget: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildStatusChip(
-                    label: _isNfcAvailable ? 'พร้อมใช้งาน' : 'ไม่รองรับ',
-                    isGood: _isNfcAvailable,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.refresh_rounded, size: 18, color: Color(0xFF64748B)),
-                    onPressed: _checkDeviceCapabilities,
-                    tooltip: 'รีเฟรชสถานะ NFC',
-                    splashRadius: 18,
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1, indent: 60, color: Color(0xFFF1F5F9)),
-
             // สิทธิ์ Bluetooth
             _buildPermissionTile(
               icon: Icons.bluetooth_rounded,

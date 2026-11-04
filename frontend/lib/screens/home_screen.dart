@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'todo_list_screen.dart';
 
 // Model เรียบง่ายเก็บเฉพาะเวลาและกิจกรรม
 class TodoItem {
@@ -14,6 +13,20 @@ class TodoItem {
 
   factory TodoItem.fromString(String raw) {
     String trimmed = raw.trim();
+
+    // กำจัด prefix ซ้ำซ้อนที่อาจติดมาจากการซิงก์ (เช่น T:ADD:, T:, ADD:)
+    while (trimmed.startsWith('T:ADD:') ||
+        trimmed.startsWith('T:') ||
+        trimmed.startsWith('ADD:')) {
+      if (trimmed.startsWith('T:ADD:')) {
+        trimmed = trimmed.substring(6).trim();
+      } else if (trimmed.startsWith('T:')) {
+        trimmed = trimmed.substring(2).trim();
+      } else if (trimmed.startsWith('ADD:')) {
+        trimmed = trimmed.substring(4).trim();
+      }
+    }
+
     RegExp timeReg = RegExp(r'^(\d{1,2}:\d{2})\s*(.*)$');
     var match = timeReg.firstMatch(trimmed);
 
@@ -136,6 +149,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           .where((item) => item.trim().isNotEmpty)
           .map((item) => TodoItem.fromString(item))
           .toList();
+
+      // หากข้อมูลเดิมใน Database มี prefix ติดมา ให้บันทึกข้อมูลคลีนทับลง Database ทันที
+      if (routineData.contains('T:ADD:') || routineData.startsWith('T:')) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _saveRoutineToDatabaseAndSync();
+        });
+      }
     } else {
       _todoItems = [];
     }
@@ -193,23 +213,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         todoItems: _todoItems,
         onAdd: _addTodoItem,
         onDelete: _deleteTodoItem,
-        onOpenFullManager: () async {
-          Navigator.of(ctx).pop();
-          await Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => TodoListScreen(
-                username: widget.username,
-                initialTodoList: widget.userData?['routineData'],
-                onSendTodoList: (data) {
-                  widget.onSendTodoList?.call(data);
-                },
-              ),
-            ),
-          );
-          if (mounted) {
-            _parseRoutineData();
-          }
-        },
       ),
     );
   }
@@ -308,38 +311,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Smart Keychain',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF14293D),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      widget.isConnected
-                          ? 'ฮาร์ดแวร์เชื่อมต่อผ่าน BLE แล้ว'
-                          : 'ESP32 BLE & NFC (แตะเพื่อเชื่อมต่อ)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: widget.isConnected
-                            ? const Color(0xFF16A34A)
-                            : const Color(0xFF94A3B8),
-                        fontWeight: FontWeight.normal,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+              const Text(
+                'Smart Keychain',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF14293D),
                 ),
               ),
-              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
@@ -388,17 +369,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   value: batteryText,
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildMetricItem(
-                  icon: Icons.bluetooth_rounded,
-                  iconColor: const Color(0xFF3B82F6),
-                  bgColor: const Color(0xFFEFF6FF),
-                  title: 'สัญญาณ BLE',
-                  value: signalText,
-                ),
-              ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: _buildMetricItem(
                   icon: Icons.thermostat_rounded,
@@ -415,145 +386,100 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           const Divider(color: Color(0xFFF1F5F9), height: 1),
           const SizedBox(height: 14),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
+          widget.isConnected
+              ? Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    onTap: widget.onConnectPressed,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 11),
                       decoration: BoxDecoration(
-                        color: widget.isConnected
-                            ? const Color(0xFFDCFCE7)
-                            : const Color(0xFFF1F5F9),
-                        shape: BoxShape.circle,
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFF86EFAC)),
                       ),
-                      child: Icon(
-                        widget.isConnected
-                            ? Icons.bluetooth_connected_rounded
-                            : Icons.bluetooth_disabled_rounded,
-                        size: 16,
-                        color: widget.isConnected
-                            ? const Color(0xFF16A34A)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        widget.isConnected
-                            ? 'เชื่อมต่อพร้อมส่งข้อมูล'
-                            : 'ยังไม่ได้เชื่อมต่อบลูทูธ',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w500,
-                          color: widget.isConnected
-                              ? const Color(0xFF16A34A)
-                              : const Color(0xFF64748B),
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.bluetooth_connected_rounded,
+                            size: 18,
+                            color: Color(0xFF15803D),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'เชื่อมต่อแล้ว',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF15803D),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-
-              widget.isConnected
-                  ? Material(
+                  ),
+                )
+              : AnimatedBuilder(
+                  animation: _pulseController,
+                  builder: (context, child) {
+                    return Material(
                       color: Colors.transparent,
                       borderRadius: BorderRadius.circular(14),
                       child: InkWell(
                         onTap: widget.onConnectPressed,
                         borderRadius: BorderRadius.circular(14),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 11),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFDCFCE7),
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFF7A00), Color(0xFFFF4800)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0xFF86EFAC)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.bluetooth_connected_rounded,
-                                size: 18,
-                                color: Color(0xFF15803D),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFFF6B00).withValues(
+                                  alpha: 0.22 + (_pulseController.value * 0.22),
+                                ),
+                                blurRadius: 8 + (_pulseController.value * 8),
+                                offset: const Offset(0, 3),
                               ),
-                              SizedBox(width: 6),
-                              Text(
-                                'เชื่อมต่อแล้ว',
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              ScaleTransition(
+                                scale: _pulseScale,
+                                child: const Icon(
+                                  Icons.bluetooth_searching_rounded,
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'สแกนบลูทูธ (BLE)',
                                 style: TextStyle(
-                                  fontSize: 12.5,
+                                  color: Colors.white,
+                                  fontSize: 13,
                                   fontWeight: FontWeight.bold,
-                                  color: Color(0xFF15803D),
+                                  letterSpacing: 0.2,
                                 ),
                               ),
                             ],
                           ),
                         ),
                       ),
-                    )
-                  : AnimatedBuilder(
-                      animation: _pulseController,
-                      builder: (context, child) {
-                        return Material(
-                          color: Colors.transparent,
-                          borderRadius: BorderRadius.circular(14),
-                          child: InkWell(
-                            onTap: widget.onConnectPressed,
-                            borderRadius: BorderRadius.circular(14),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFFFF7A00), Color(0xFFFF4800)],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(14),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: const Color(0xFFFF6B00).withValues(
-                                      alpha: 0.22 + (_pulseController.value * 0.22),
-                                    ),
-                                    blurRadius: 8 + (_pulseController.value * 8),
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  ScaleTransition(
-                                    scale: _pulseScale,
-                                    child: const Icon(
-                                      Icons.bluetooth_searching_rounded,
-                                      size: 18,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 7),
-                                  const Text(
-                                    'สแกนบลูทูธ (BLE)',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 0.2,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ],
-          ),
+                    );
+                  },
+                ),
         ],
       ),
     );
@@ -702,13 +628,11 @@ class _RoutineBottomSheetModal extends StatefulWidget {
   final List<TodoItem> todoItems;
   final Function(String task, String time) onAdd;
   final Function(int index) onDelete;
-  final VoidCallback onOpenFullManager;
 
   const _RoutineBottomSheetModal({
     required this.todoItems,
     required this.onAdd,
     required this.onDelete,
-    required this.onOpenFullManager,
   });
 
   @override
@@ -1031,21 +955,15 @@ class _RoutineBottomSheetModalState extends State<_RoutineBottomSheetModal> {
 
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${items.length} รายการทั้งหมด',
-                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+            child: Center(
+              child: Text(
+                '${items.length} รายการทั้งหมด',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF94A3B8),
+                  fontWeight: FontWeight.w500,
                 ),
-                TextButton(
-                  onPressed: widget.onOpenFullManager,
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF64748B),
-                  ),
-                  child: const Text('จัดการหน้าเต็ม ->', style: TextStyle(fontSize: 12)),
-                ),
-              ],
+              ),
             ),
           ),
         ],

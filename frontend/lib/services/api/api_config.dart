@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiConfig {
   /// IP Address ปัจจุบันของเครื่องคอมพิวเตอร์ที่รัน C# Backend บนเครือข่าย Wi-Fi
-  static const String defaultLanIp = '10.26.13.87';
+  static const String defaultLanIp = '172.20.10.4';
   static const int port = 5000;
 
   /// Candidate URLs เรียงตามลำดับความน่าจะเป็น

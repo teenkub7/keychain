@@ -825,9 +825,6 @@ class _HealthSensorScreenState extends State<HealthSensorScreen>
         ? '${_latestSpot!.spO2.toInt()}%'
         : '--';
 
-    final hrColor = spot?.heartRateColor ?? const Color(0xFF94A3B8);
-    final spo2Color = spot?.spO2Color ?? const Color(0xFF94A3B8);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -900,32 +897,41 @@ class _HealthSensorScreenState extends State<HealthSensorScreen>
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFEF2F2),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFFFEE2E2)),
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'อัตราเต้นหัวใจ',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF991B1B),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.favorite_rounded,
+                              color: Color(0xFFEF4444),
+                              size: 20,
                             ),
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'อัตราเต้นหัวใจ',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                          const SizedBox(height: 4),
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.baseline,
                             textBaseline: TextBaseline.alphabetic,
                             children: [
                               Text(
                                 hrVal,
-                                style: TextStyle(
-                                  fontSize: 28,
+                                style: const TextStyle(
+                                  fontSize: 26,
                                   fontWeight: FontWeight.bold,
-                                  color: hrColor,
+                                  color: Color(0xFF14293D),
                                 ),
                               ),
                               const SizedBox(width: 4),
@@ -948,35 +954,38 @@ class _HealthSensorScreenState extends State<HealthSensorScreen>
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF0FDF4),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFFDCFCE7)),
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'ออกซิเจน SpO2',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF155E75),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEFF6FF),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.water_drop_rounded,
+                              color: Color(0xFF3B82F6),
+                              size: 20,
                             ),
                           ),
-                          const SizedBox(height: 10),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              Text(
-                                spo2Val,
-                                style: TextStyle(
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.bold,
-                                  color: spo2Color,
-                                ),
-                              ),
-                            ],
+                          const SizedBox(height: 12),
+                          const Text(
+                            'ออกซิเจน SpO2',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            spo2Val,
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF14293D),
+                            ),
                           ),
                         ],
                       ),
@@ -984,9 +993,6 @@ class _HealthSensorScreenState extends State<HealthSensorScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              // ส่วนที่ 2: วิเคราะห์สุขภาพ ในช่อง ผลตรวจวัดสุขภาพล่าสุด วัดจาก ประวัติย้อนหลัง 10 ครั้งล่าสุด
-              _buildRecentHealthAnalysisCard(),
               const SizedBox(height: 18),
               ElevatedButton.icon(
                 onPressed: _isMeasuring ? null : _handleMeasurement,
@@ -1006,13 +1012,15 @@ class _HealthSensorScreenState extends State<HealthSensorScreen>
                       )
                     : const Icon(Icons.touch_app_rounded, size: 18),
                 label: Text(
-                  _isMeasuring ? 'กำลังวัดสัญญาณชีพสุขภาพ...' : 'แตะเพื่อบันทึกการวัดสุขภาพตอนนี้',
+                  _isMeasuring ? 'กำลังวัดสัญญาณชีพสุขภาพ...' : 'แตะเพื่อบันทึกการวัดสุขภาพ',
                   style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
           ),
         ),
+        const SizedBox(height: 18),
+        _buildRecentHealthAnalysisCard(),
         const SizedBox(height: 24),
         _buildSpotChartCard(),
         const SizedBox(height: 24),
@@ -1021,26 +1029,33 @@ class _HealthSensorScreenState extends State<HealthSensorScreen>
     );
   }
 
-  // ส่วนที่ 2: การ์ดวิเคราะห์สุขภาพจากประวัติย้อนหลัง 5 ครั้งล่าสุดในฐานข้อมูล (ปรับแต่งคลีน มินิมอล)
+  // ส่วนที่ 2: การ์ดวิเคราะห์สุขภาพจากประวัติย้อนหลัง 5 ครั้งล่าสุดในฐานข้อมูล (การ์ดเดี่ยว มินิมอล คลีน)
   Widget _buildRecentHealthAnalysisCard() {
     final analysis = RecentHealthAnalysis.fromHistory(_spotHistory, limit: 5);
     final themeColor = analysis.statusColor;
 
     return Container(
       decoration: BoxDecoration(
-        color: themeColor.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: themeColor.withValues(alpha: 0.2), width: 1.0),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 38,
+                height: 38,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: themeColor.withValues(alpha: 0.12),
@@ -1048,10 +1063,10 @@ class _HealthSensorScreenState extends State<HealthSensorScreen>
                 ),
                 child: Text(
                   analysis.emoji,
-                  style: const TextStyle(fontSize: 18),
+                  style: const TextStyle(fontSize: 20),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1059,18 +1074,18 @@ class _HealthSensorScreenState extends State<HealthSensorScreen>
                     Text(
                       'วิเคราะห์สุขภาพ ${analysis.count > 0 ? "(${analysis.count} ครั้งล่าสุด)" : ""}',
                       style: const TextStyle(
-                        fontSize: 13,
+                        fontSize: 14,
                         fontWeight: FontWeight.bold,
                         color: Color(0xFF1E293B),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 1),
+                    const SizedBox(height: 2),
                     Text(
                       analysis.summary,
                       style: const TextStyle(
-                        fontSize: 11,
+                        fontSize: 11.5,
                         color: Color(0xFF64748B),
                       ),
                       maxLines: 1,
@@ -1081,15 +1096,16 @@ class _HealthSensorScreenState extends State<HealthSensorScreen>
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: themeColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: themeColor.withValues(alpha: 0.25)),
                 ),
                 child: Text(
                   analysis.statusLabel,
                   style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 11,
                     fontWeight: FontWeight.bold,
                     color: themeColor,
                   ),
@@ -1098,20 +1114,20 @@ class _HealthSensorScreenState extends State<HealthSensorScreen>
             ],
           ),
           if (analysis.hasData) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 14),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFF1F5F9)),
               ),
               child: Row(
                 children: [
                   Expanded(child: _buildMiniStat('HR เฉลี่ย', '${analysis.avgHeartRate.round()} BPM', const Color(0xFFEF4444))),
-                  Container(width: 1, height: 20, color: const Color(0xFFE2E8F0)),
+                  Container(width: 1, height: 24, color: const Color(0xFFE2E8F0)),
                   Expanded(child: _buildMiniStat('SpO2 เฉลี่ย', '${analysis.avgSpO2.round()}%', const Color(0xFF0284C7))),
-                  Container(width: 1, height: 20, color: const Color(0xFFE2E8F0)),
+                  Container(width: 1, height: 24, color: const Color(0xFFE2E8F0)),
                   Expanded(child: _buildMiniStat('สม่ำเสมอ', '${analysis.normalCount}/${analysis.count} ครั้ง', const Color(0xFF10B981))),
                 ],
               ),
@@ -1603,7 +1619,7 @@ class _HealthSensorScreenState extends State<HealthSensorScreen>
                 )
               : const Icon(Icons.touch_app_rounded, size: 18),
           label: Text(
-            _isMeasuringAuto ? 'กำลังอ่านค่าสภาพแวดล้อม...' : 'แตะเพื่อบันทึกค่าอุณหภูมิ & ความชื้นตอนนี้',
+            _isMeasuringAuto ? 'กำลังอ่านค่าสภาพแวดล้อม...' : 'แตะเพื่อบันทึกค่าอุณหภูมิ & ความชื้น',
             style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
           ),
         ),

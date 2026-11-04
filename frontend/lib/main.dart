@@ -12,7 +12,6 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/health_sensor_screen.dart';
 import 'screens/display_screen.dart';
-import 'screens/nfc_screen.dart';
 import 'screens/settings_screen.dart';
 
 void main() {
@@ -28,6 +27,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Smart Keychain',
       theme: ThemeData(
+        fontFamily: 'Prompt',
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFFFF6B00),
           primary: const Color(0xFFFF6B00),
@@ -87,7 +87,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   // ฟังก์ชันประมวลผลและส่งรูปภาพผ่าน BLE ไปยัง ESP32
-  Future<void> sendImageBle(Uint8List rawImageBytes) async {
+  Future<void> sendImageBle(Uint8List rawImageBytes, {String type = 'image'}) async {
     if (targetDevice == null || targetCharacteristic == null || !isConnected) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -98,19 +98,21 @@ class _MainScreenState extends State<MainScreen> {
 
     try {
       if (!mounted) return;
+      final label = type == 'qr' ? 'รูปภาพ QR Code' : 'รูปภาพ';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กำลังประมวลผลและส่งรูปภาพ...')),
+        SnackBar(content: Text('กำลังประมวลผลและส่ง$label...')),
       );
 
       await ImageBleHelper.sendImageToESP32(
         rawImageBytes: rawImageBytes,
         characteristic: targetCharacteristic!,
         device: targetDevice!,
+        type: type == 'qr' ? 'IMG_QR' : 'IMG',
       );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ส่งรูปภาพลงพวงกุญแจสำเร็จ!')),
+        SnackBar(content: Text('ส่ง$labelลงพวงกุญแจสำเร็จ!')),
       );
     } catch (e) {
       debugPrint("Handled Exception: $e");
@@ -119,6 +121,33 @@ class _MainScreenState extends State<MainScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('ส่งรูปภาพเรียบร้อยแล้ว')),
       );
+    }
+  }
+
+  // ฟังก์ชันส่งเวลาปัจจุบันไปซิงค์กับนาฬิกาของ ESP32
+  Future<void> syncTimeToEsp32() async {
+    if (targetCharacteristic == null || !isConnected) return;
+    try {
+      DateTime now = DateTime.now();
+      String hour = now.hour.toString().padLeft(2, '0');
+      String minute = now.minute.toString().padLeft(2, '0');
+      String second = now.second.toString().padLeft(2, '0');
+      String timePayload = "TIME:$hour:$minute:$second";
+
+      await targetCharacteristic!.write(utf8.encode(timePayload), withoutResponse: false);
+      debugPrint("🕒 ซิงค์เวลาสำเร็จ: $timePayload");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🕒 ซิงค์เวลากับพวงกุญแจสำเร็จ ($hour:$minute:$second)'),
+            backgroundColor: const Color(0xFF16A34A),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("❌ เกิดข้อผิดพลาดในการซิงค์เวลา: $e");
     }
   }
 
@@ -276,6 +305,9 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void syncUserDataToEsp32() async {
+    // 🟢 1. ซิงค์เวลาปัจจุบันกับ ESP32 ทันทีที่เชื่อมต่อ
+    await syncTimeToEsp32();
+
     if (widget.userData != null && isConnected) {
       if (widget.userData!['routineData'] != null) {
         await sendBleData("R:${widget.userData!['routineData']}");
@@ -356,16 +388,13 @@ class _MainScreenState extends State<MainScreen> {
               saveUserDataToBackend("routineData", cleanRoutine);
             },
             
-            // 2. จัดการคำสั่งส่ง BLE และแยกแยะการบันทึก Database ไม่ให้ติด T:CLEAR
+            // 2. จัดการคำสั่งส่ง BLE ไปยัง ESP32
             onSendTodoList: (data) {
               if (data == "CLEAR" || data == "T:CLEAR" || data.isEmpty) {
-                // ส่งสั่งล้างหน้าจอให้ ESP32
                 sendBleData("T:CLEAR");
-                // แต่เซฟลง Database เป็นค่าว่าง "" เท่านั้น (ไม่เซฟคำว่า CLEAR)
-                saveUserDataToBackend("routineData", "");
               } else {
-                sendBleData("T:$data");
-                saveUserDataToBackend("routineData", data);
+                String payload = data.startsWith("T:") ? data : "T:$data";
+                sendBleData(payload);
               }
             },
           ),
@@ -376,13 +405,17 @@ class _MainScreenState extends State<MainScreen> {
           DisplayScreen(
             initialQrData: widget.userData?['qrData'],
             initialImageData: widget.userData?['imageData'],
-            onSendDisplay: (data) async {
+            onSendDisplay: (data, {String type = 'image'}) async {
               if (data is Uint8List) {
-                await sendImageBle(data);
+                await sendImageBle(data, type: type);
                 
-                Uint8List processed = ImageBleHelper.processImageForESP32(data);
+                Uint8List processed = ImageBleHelper.processImageForESP32(data, isQr: type == 'qr');
                 String base64Str = base64Encode(processed);
-                saveUserDataToBackend("imageData", base64Str);
+                if (type == 'qr') {
+                  saveUserDataToBackend("qrData", base64Str);
+                } else {
+                  saveUserDataToBackend("imageData", base64Str);
+                }
               } 
               else if (data is String) {
                 sendBleData(data);
@@ -394,13 +427,6 @@ class _MainScreenState extends State<MainScreen> {
               }
             },
           ),
-          NfcScreen(
-            initialNfcData: widget.userData?['nfcData'],
-            onSendNfc: (String nfcData) {
-              sendBleData("NFC:$nfcData");
-              saveUserDataToBackend("nfcData", nfcData);
-            },
-          ),
           SettingsPage(
             isConnected: isConnected,
             connectedDeviceName: (targetDevice != null && targetDevice!.platformName.isNotEmpty)
@@ -409,6 +435,7 @@ class _MainScreenState extends State<MainScreen> {
             onDisconnect: disconnectEsp32,
             onConnect: connectToEsp32,
             onSendBleData: sendBleData,
+            onSyncTime: syncTimeToEsp32,
             username: currentUsername,
             userData: widget.userData,
             onLogout: () async {
@@ -463,11 +490,6 @@ class _MainScreenState extends State<MainScreen> {
               icon: Icon(Icons.qr_code_2_rounded),
               activeIcon: Icon(Icons.qr_code_2_rounded, color: Color(0xFFFF6B00)),
               label: 'ส่งรูป/QR',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.contactless_outlined),
-              activeIcon: Icon(Icons.contactless_rounded, color: Color(0xFFFF6B00)),
-              label: 'NFC',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.settings_outlined),

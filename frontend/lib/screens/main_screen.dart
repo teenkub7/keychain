@@ -10,7 +10,6 @@ import 'login_screen.dart';
 import 'home_screen.dart';
 import 'health_sensor_screen.dart';
 import 'display_screen.dart';
-import 'nfc_screen.dart';
 import 'settings_screen.dart';
 
 void main() {
@@ -292,13 +291,6 @@ class _MainScreenState extends State<MainScreen> {
               }
             },
           ),
-          NfcScreen(
-            initialNfcData: widget.userData?['nfcData'],
-            onSendNfc: (String nfcData) {
-              sendBleData("NFC:$nfcData");
-              saveUserDataToBackend("nfcData", nfcData);
-            },
-          ),
           SettingsPage(
             isConnected: isConnected,
             connectedDeviceName: (targetDevice != null && targetDevice!.platformName.isNotEmpty)
@@ -361,11 +353,6 @@ class _MainScreenState extends State<MainScreen> {
               icon: Icon(Icons.qr_code_2_rounded),
               activeIcon: Icon(Icons.qr_code_2_rounded, color: Color(0xFFFF6B00)),
               label: 'ส่งรูป/QR',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.contactless_outlined),
-              activeIcon: Icon(Icons.contactless_rounded, color: Color(0xFFFF6B00)),
-              label: 'NFC',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.settings_outlined),

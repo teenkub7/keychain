@@ -5,7 +5,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:image_picker/image_picker.dart';
 
 class DisplayScreen extends StatefulWidget {
-  final Function(dynamic) onSendDisplay;
+  final Function onSendDisplay;
   final String? initialQrData;
   final String? initialImageData;
   final String currentUsername;
@@ -112,14 +112,14 @@ class _DisplayScreenState extends State<DisplayScreen> {
           Expanded(
             child: _buildTabButton(
               index: 0,
-              title: 'ส่งรูปภาพ (Image)',
+              title: 'ส่งรูปภาพ',
               icon: Icons.image_rounded,
             ),
           ),
           Expanded(
             child: _buildTabButton(
               index: 1,
-              title: 'คิวอาร์โค้ด (QR)',
+              title: 'คิวอาร์โค้ด',
               icon: Icons.qr_code_2_rounded,
             ),
           ),
@@ -182,7 +182,7 @@ class _DisplayScreenState extends State<DisplayScreen> {
 
 // ==================== ส่วนที่ 1: ส่งรูปภาพ TFT ====================
 class _TftImageSection extends StatefulWidget {
-  final Function(dynamic) onSendDisplay;
+  final Function onSendDisplay;
   final String? initialImageData;
   final String username;
 
@@ -331,10 +331,10 @@ class _TftImageSectionState extends State<_TftImageSection> {
 
     try {
       if (_selectedRawBytes != null) {
-        await widget.onSendDisplay(_selectedRawBytes);
+        await widget.onSendDisplay(_selectedRawBytes, type: 'image');
       } else if (_savedBase64Image != null) {
         final Uint8List decodedBytes = base64Decode(_savedBase64Image!);
-        await widget.onSendDisplay(decodedBytes);
+        await widget.onSendDisplay(decodedBytes, type: 'image');
       }
 
       if (mounted) {
@@ -398,7 +398,7 @@ class _TftImageSectionState extends State<_TftImageSection> {
                   const Icon(Icons.send_rounded, size: 20, color: Colors.white),
                 const SizedBox(width: 8),
                 Text(
-                  _isLoading ? 'กำลังประมวลผลและส่งรูปภาพ...' : 'ส่งรูปภาพเข้าพวงกุญแจ TFT',
+                  _isLoading ? 'กำลังประมวลผลและส่งรูปภาพ...' : 'ส่งรูปภาพเข้าพวงกุญแจ',
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -478,13 +478,15 @@ class _TftImageSectionState extends State<_TftImageSection> {
     final bool isLogoSelected = _selectedPresetName == 'โลโก้ Smart Keychain';
     final bool hasCustomImage = _selectedRawBytes != null && !isLogoSelected;
 
-    return Row(
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         const Text(
           'ตัวอย่างด่วน: ',
           style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
         ),
-        const SizedBox(width: 8),
         InkWell(
           onTap: _toggleLogoPreset,
           borderRadius: BorderRadius.circular(10),
@@ -519,13 +521,13 @@ class _TftImageSectionState extends State<_TftImageSection> {
             ),
           ),
         ),
-        if (hasCustomImage) ...[
-          const SizedBox(width: 8),
+        if (hasCustomImage)
           InkWell(
             onTap: () {
               setState(() {
                 _selectedRawBytes = null;
                 _selectedPresetName = '';
+                _isImageCleared = true;
               });
               _showCustomSnackBar(message: 'ยกเลิกรูปภาพแล้ว', isError: false);
             },
@@ -535,8 +537,10 @@ class _TftImageSectionState extends State<_TftImageSection> {
               decoration: BoxDecoration(
                 color: const Color(0xFFFFF1F2),
                 borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFECDD3)),
               ),
               child: const Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.close_rounded, size: 13, color: Color(0xFFE11D48)),
                   SizedBox(width: 4),
@@ -548,7 +552,6 @@ class _TftImageSectionState extends State<_TftImageSection> {
               ),
             ),
           ),
-        ],
       ],
     );
   }
@@ -609,7 +612,7 @@ class _TftImageSectionState extends State<_TftImageSection> {
 
 // ==================== ส่วนที่ 2: ส่ง QR Code TFT (อัปโหลดรูปภาพ QR Code) ====================
 class _TftQrSection extends StatefulWidget {
-  final Function(dynamic) onSendDisplay;
+  final Function onSendDisplay;
   final String? initialQrData;
   final String username;
 
@@ -735,10 +738,10 @@ class _TftQrSectionState extends State<_TftQrSection> {
 
     try {
       if (_selectedRawBytes != null) {
-        await widget.onSendDisplay(_selectedRawBytes);
+        await widget.onSendDisplay(_selectedRawBytes, type: 'qr');
       } else if (_savedBase64Image != null) {
         final Uint8List decodedBytes = base64Decode(_savedBase64Image!);
-        await widget.onSendDisplay(decodedBytes);
+        await widget.onSendDisplay(decodedBytes, type: 'qr');
       }
 
       if (mounted) {
@@ -839,7 +842,7 @@ class _TftQrSectionState extends State<_TftQrSection> {
                   const Icon(Icons.send_rounded, size: 20, color: Colors.white),
                 const SizedBox(width: 8),
                 Text(
-                  _isLoading ? 'กำลังส่งรูปภาพ QR Code...' : 'ส่งรูปภาพ QR Code เข้าพวงกุญแจ TFT',
+                  _isLoading ? 'กำลังส่งคิวอาร์โค้ด...' : 'ส่งคิวอาร์โค้ดเข้าพวงกุญแจ',
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
