@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/notification_service.dart';
 
 // Model เรียบง่ายเก็บเฉพาะเวลาและกิจกรรม
 class TodoItem {
@@ -129,6 +130,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         String deletedText = trimmed.substring(6).trim();
         print(">> 📥 ESP32 Auto-Deleted Item: $deletedText");
 
+        // 🔔 เด้งแจ้งเตือนบนมือถือทันทีเมื่อพวงกุญแจร้อง Buzzer ครบกำหนดเวลา!
+        NotificationService.instance.showNotification(
+          id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          title: '📋 ถึงเวลาทำกิจกรรมแล้ว! (Smart Keychain)',
+          body: deletedText,
+          payload: 'TODO_DEL_T',
+        );
+
         setState(() {
           _todoItems.removeWhere((item) {
             String fullText = item.toFormattedString();
@@ -155,6 +164,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _saveRoutineToDatabaseAndSync();
         });
+      }
+
+      // ซิงค์การแจ้งเตือนลงเครื่องมือถือ (Local Scheduled Notification)
+      for (int i = 0; i < _todoItems.length; i++) {
+        final item = _todoItems[i];
+        if (item.time.isNotEmpty) {
+          NotificationService.instance.scheduleTodoReminder(
+            id: 3000 + i,
+            task: item.task,
+            timeStr: item.time,
+          );
+        }
       }
     } else {
       _todoItems = [];

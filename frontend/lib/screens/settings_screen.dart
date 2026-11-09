@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'login_screen.dart';
+import '../services/notification_service.dart';
 
 /// คลาสตัวเลือกเวลาพักหน้าจอ (Sleep Timeout) แบบ Type-Safe ป้องกัน Null Type Error
 class _SleepOption {
@@ -280,6 +281,12 @@ class _SettingsPageState extends State<SettingsPage> {
                   _buildSectionTitle('ระบบและสิทธิ์การใช้งาน', Icons.shield_outlined),
                   const SizedBox(height: 10),
                   _buildPermissionsCard(),
+                  const SizedBox(height: 22),
+
+                  // 3.5 ระบบการแจ้งเตือน (Notifications)
+                  _buildSectionTitle('ระบบการแจ้งเตือน (Notifications)', Icons.notifications_active_rounded),
+                  const SizedBox(height: 10),
+                  _buildNotificationsCard(),
                   const SizedBox(height: 26),
 
                   // 4. ปุ่มออกจากระบบ (Logout) - เหลือเฉพาะปุ่ม Logout ไม่มีหัวข้อตามที่ต้องการ
@@ -961,6 +968,264 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // การ์ดระบบแจ้งเตือน (Notifications) พร้อมปุ่มเดโม
+  Widget _buildNotificationsCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x080F172A),
+            blurRadius: 16,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.notifications_active_rounded,
+                  color: Color(0xFFFF6B00),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'การแจ้งเตือนอัจฉริยะ (Local Alerts)',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF14293D),
+                      ),
+                    ),
+                    Text(
+                      'แจ้งเตือนบนมือถือทันทีแม้ไม่ต่อเน็ต (Offline 100%)',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          const SizedBox(height: 14),
+
+          // 1. ปุ่มทดสอบ Anti-Lost Alert
+          _buildAlertActionRow(
+            icon: Icons.bluetooth_disabled_rounded,
+            iconColor: const Color(0xFFEF4444),
+            bgColor: const Color(0xFFFEF2F2),
+            title: '1. ทดสอบเตือนกุญแจหาย (Anti-Lost)',
+            subtitle: 'จำลองเหตุการณ์ Bluetooth หลุดระยะหรือลืมกุญแจ',
+            btnText: 'ทดสอบ',
+            btnColor: const Color(0xFFEF4444),
+            onTap: () {
+              NotificationService.instance.showAntiLostAlert(
+                deviceName: widget.connectedDeviceName ?? 'ESP32_SmartKeychain',
+              );
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('🚨 ส่งการแจ้งเตือน Anti-Lost สำเร็จ!'),
+                  backgroundColor: Color(0xFFEF4444),
+                  behavior: SnackBarBehavior.floating,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // 2. ปุ่มทดสอบ Health / Sensor Alert
+          _buildAlertActionRow(
+            icon: Icons.favorite_rounded,
+            iconColor: const Color(0xFFF43F5E),
+            bgColor: const Color(0xFFFFF1F2),
+            title: '2. ทดสอบเตือนสุขภาพ (Health Alert)',
+            subtitle: 'จำลองค่า SpO2 ต่ำ (<95%) หรือหัวใจเต้นผิดปกติ',
+            btnText: 'ทดสอบ',
+            btnColor: const Color(0xFFF43F5E),
+            onTap: () {
+              NotificationService.instance.checkAndAlertSensorData(
+                heartRate: 128.0,
+                spO2: 92.5,
+                temperature: 38.2,
+              );
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('💓 ส่งการแจ้งเตือน Health Alert สำเร็จ!'),
+                  backgroundColor: Color(0xFFF43F5E),
+                  behavior: SnackBarBehavior.floating,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // 3. ปุ่มทดสอบแจ้งเตือนทั่วไป
+          _buildAlertActionRow(
+            icon: Icons.notifications_rounded,
+            iconColor: const Color(0xFFFF6B00),
+            bgColor: const Color(0xFFFFF7ED),
+            title: '3. ทดสอบการแจ้งเตือนทั่วไป (Test Alert)',
+            subtitle: 'ทดสอบแถบ Notification ป๊อปอัปและเสียงเตือน',
+            btnText: 'ทดสอบ',
+            btnColor: const Color(0xFFFF6B00),
+            onTap: () {
+              NotificationService.instance.testNotification();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('🔔 ส่งการแจ้งเตือนทั่วไปสำเร็จ!'),
+                  backgroundColor: Color(0xFFFF6B00),
+                  behavior: SnackBarBehavior.floating,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // 4. ปุ่มทดสอบตั้งเวลาเตือน ToDo (นับถอยหลัง 5 วินาที)
+          _buildAlertActionRow(
+            icon: Icons.access_alarm_rounded,
+            iconColor: const Color(0xFF3B82F6),
+            bgColor: const Color(0xFFEFF6FF),
+            title: '4. ทดสอบตั้งเวลาเตือน ToDo (นับถอยหลัง 5 วิ)',
+            subtitle: 'ทดสอบระบบ Schedule Notification (เด้งเตือนในอีก 5 วินาที)',
+            btnText: 'ทดสอบ',
+            btnColor: const Color(0xFF3B82F6),
+            onTap: () {
+              NotificationService.instance.scheduleTestTodoInSeconds(seconds: 5);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('⏱️ ตั้งเวลาเตือนแล้ว! กรุณารอ 5 วินาที (ลองพับแอปได้เลย)'),
+                  backgroundColor: Color(0xFF3B82F6),
+                  behavior: SnackBarBehavior.floating,
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // 5. ปุ่มทดสอบเตือนอุณหภูมิและความชื้น (Temp & Humidity Alert)
+          _buildAlertActionRow(
+            icon: Icons.thermostat_rounded,
+            iconColor: const Color(0xFF0EA5E9),
+            bgColor: const Color(0xFFF0F9FF),
+            title: '5. ทดสอบเตือนอุณหภูมิและความชื้น',
+            subtitle: 'จำลองการวัดค่า Temp: 29.5 °C / Hum: 65% RH จาก ESP32',
+            btnText: 'ทดสอบ',
+            btnColor: const Color(0xFF0EA5E9),
+            onTap: () {
+              NotificationService.instance.showTempHumidityAlert(
+                temperature: 29.5,
+                humidity: 65.0,
+                force: true,
+              );
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('🌡️ ส่งการแจ้งเตือนผลการวัดอุณหภูมิและความชื้นแล้ว!'),
+                  backgroundColor: Color(0xFF0EA5E9),
+                  behavior: SnackBarBehavior.floating,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // วิดเจ็ตแถวปุ่มทดสอบ Alert แต่ละประเภท
+  Widget _buildAlertActionRow({
+    required IconData icon,
+    required Color iconColor,
+    required Color bgColor,
+    required String title,
+    required String subtitle,
+    required String btnText,
+    required Color btnColor,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFF1F5F9)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: iconColor, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF14293D),
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            onPressed: onTap,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: btnColor,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              minimumSize: const Size(0, 32),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: Text(
+              btnText,
+              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
       ),
     );
   }

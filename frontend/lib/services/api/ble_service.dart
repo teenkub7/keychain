@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../../models/sensor_data.dart';
 import 'sensor_api_service.dart';
+import '../notification_service.dart';
 
 class BleService {
   static final BleService _instance = BleService._internal();
@@ -124,6 +125,21 @@ class BleService {
       final double hum = double.tryParse(data['hum']?.toString() ?? '0') ?? 0.0;
       final double hr = double.tryParse(data['hr']?.toString() ?? '0') ?? 0.0;
       final double spo2 = double.tryParse(data['spo2']?.toString() ?? '0') ?? 0.0;
+
+      // 🔔 ตรวจสอบและแจ้งเตือนสุขภาพ (Health/Sensor Alert)
+      NotificationService.instance.checkAndAlertSensorData(
+        heartRate: hr,
+        spO2: spo2,
+        temperature: temp,
+      );
+
+      // 🌡️ แจ้งเตือนผลการวัดอุณหภูมิและความชื้น (Temp & Humidity Alert)
+      if (temp > 0 || hum > 0) {
+        NotificationService.instance.showTempHumidityAlert(
+          temperature: temp,
+          humidity: hum,
+        );
+      }
 
       // ใช้ _currentMode ที่ UI ตั้งไว้ก่อนส่งคำสั่ง
       // แทนการเดาจากค่า hr/spo2 (เพราะ ESP32 ส่งมาทุก field ทุกครั้ง)

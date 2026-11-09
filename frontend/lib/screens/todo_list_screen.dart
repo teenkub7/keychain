@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../services/api/api_config.dart';
+import '../services/notification_service.dart';
 
 class TodoItem {
   String task;
@@ -65,6 +66,7 @@ class _TodoListScreenState extends State<TodoListScreen> {
           .where((item) => item.trim().isNotEmpty)
           .map((item) => TodoItem.fromString(item))
           .toList();
+      _scheduleAllActiveTodos();
     } else {
       _todoList = [];
     }
@@ -75,6 +77,29 @@ class _TodoListScreenState extends State<TodoListScreen> {
     _taskController.dispose();
     _timeController.dispose();
     super.dispose();
+  }
+
+  void _scheduleAllActiveTodos() {
+    try {
+      for (int i = 0; i < 50; i++) {
+        if (i < _todoList.length) {
+          final item = _todoList[i];
+          if (!item.isDone && item.time.isNotEmpty) {
+            NotificationService.instance.scheduleTodoReminder(
+              id: 3000 + i,
+              task: item.task,
+              timeStr: item.time,
+            );
+          } else {
+            NotificationService.instance.cancelNotification(3000 + i);
+          }
+        } else {
+          NotificationService.instance.cancelNotification(3000 + i);
+        }
+      }
+    } catch (e) {
+      debugPrint("Notification schedule error: $e");
+    }
   }
 
   // ฟังก์ชันเลือกเวลาด้วย TimePicker
@@ -235,6 +260,9 @@ class _TodoListScreenState extends State<TodoListScreen> {
     } else {
       widget.onSendTodoList(formattedData);
     }
+
+    // 3. ซิงค์กำหนดเวลาแจ้งเตือนในโทรศัพท์ (Local Notification)
+    _scheduleAllActiveTodos();
 
     if (mounted) {
       setState(() {

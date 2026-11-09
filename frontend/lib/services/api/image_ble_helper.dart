@@ -7,17 +7,17 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 class ImageBleHelper {
   /// ประมวลผลรูปภาพสำหรับ ESP32:
-  /// - รูปทั่วไป (isQr = false): ครอบตัดและย่อให้เต็มจอ (240x280)
-  /// - รูป QR Code (isQr = true): ย่อให้พอดีกรอบ ไม่ตัดขอบเด็ดขาด (Fit/Contain 240x235) บนผืนผ้าใบสีขาว
+  /// - รูปทั่วไป (isQr = false): ครอบตัดและย่อให้เต็มจอ (240x320)
+  /// - รูป QR Code (isQr = true): ย่อให้พอดีกรอบ ไม่ตัดขอบเด็ดขาด (Fit/Contain 240x275) บนผืนผ้าใบสีขาว
   static Uint8List processImageForESP32(Uint8List rawBytes, {bool isQr = false}) {
     img.Image? original = img.decodeImage(rawBytes);
     if (original == null) throw Exception("Failed to decode image");
 
     if (isQr) {
       // หน้าจอ QR บน ESP32 มี Header ด้านบนกินพื้นที่ไป 45px (y=0..44)
-      // พื้นที่แสดงผลด้านล่างที่เหลือพอดีจอ 240x280 คือ กว้าง 240 x สูง 235
+      // พื้นที่แสดงผลด้านล่างที่เหลือพอดีจอ 240x320 คือ กว้าง 240 x สูง 275 (320 - 45)
       const int targetWidth = 240;
-      const int targetHeight = 235;
+      const int targetHeight = 275;
 
       // คำนวณอัตราส่วนย่อแบบ Fit/Contain เพื่อให้เห็น QR Code ครบทุกมุม ไม่ถูกตัดขอบ
       double scale = min(
@@ -31,10 +31,10 @@ class ImageBleHelper {
         original,
         width: scaledWidth,
         height: scaledHeight,
-        interpolation: img.Interpolation.average,
+        interpolation: img.Interpolation.cubic,
       );
 
-      // สร้างพื้นหลังสีขาวขนาด 240 x 235 แล้ววาง QR Code ไว้ตรงกลางพอดี
+      // สร้างพื้นหลังสีขาวขนาด 240 x 275 แล้ววาง QR Code ไว้ตรงกลางพอดี
       img.Image canvas = img.Image(width: targetWidth, height: targetHeight);
       img.fill(canvas, color: img.ColorRgb8(255, 255, 255));
 
@@ -42,11 +42,11 @@ class ImageBleHelper {
       int dstY = (targetHeight - scaledHeight) ~/ 2;
       img.compositeImage(canvas, scaled, dstX: dstX, dstY: dstY);
 
-      return Uint8List.fromList(img.encodeJpg(canvas, quality: 40));
+      return Uint8List.fromList(img.encodeJpg(canvas, quality: 75));
     } else {
-      // รูปภาพทั่วไป: ครอบตัดและปรับขนาดให้พอดีจอ 240 x 280
+      // รูปภาพทั่วไป: ครอบตัดและปรับขนาดให้เต็มจอ 240 x 320 พอดีเป๊ะ
       const int targetWidth = 240;
-      const int targetHeight = 280;
+      const int targetHeight = 320;
 
       double targetAspect = targetWidth / targetHeight;
       double currentAspect = original.width / original.height;
@@ -61,8 +61,14 @@ class ImageBleHelper {
         cropX = (original.width - cropWidth) ~/ 2;
       } else if (currentAspect < targetAspect) {
         cropHeight = (original.width / targetAspect).toInt();
-        cropY = (original.height - cropY) ~/ 2;
+        cropY = (original.height - cropHeight) ~/ 2;
       }
+
+      // ป้องกันค่า Crop หลุดออกนอกขอบภาพต้นฉบับ
+      cropX = max(0, min(cropX, original.width - cropWidth));
+      cropY = max(0, min(cropY, original.height - cropHeight));
+      cropWidth = min(cropWidth, original.width - cropX);
+      cropHeight = min(cropHeight, original.height - cropY);
 
       img.Image cropped = img.copyCrop(
         original,
@@ -76,10 +82,10 @@ class ImageBleHelper {
         cropped,
         width: targetWidth,
         height: targetHeight,
-        interpolation: img.Interpolation.average,
+        interpolation: img.Interpolation.cubic,
       );
 
-      return Uint8List.fromList(img.encodeJpg(resized, quality: 35));
+      return Uint8List.fromList(img.encodeJpg(resized, quality: 75));
     }
   }
 

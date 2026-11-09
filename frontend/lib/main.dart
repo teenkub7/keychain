@@ -13,8 +13,11 @@ import 'screens/home_screen.dart';
 import 'screens/health_sensor_screen.dart';
 import 'screens/display_screen.dart';
 import 'screens/settings_screen.dart';
+import 'services/notification_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.instance.initialize();
   runApp(const MyApp());
 }
 
@@ -60,11 +63,13 @@ class _MainScreenState extends State<MainScreen> {
   // 🟢 1. สร้าง StreamController ไว้ส่งสัญญาณ BLE Notify ไปยัง HomeScreen
   final StreamController<String> _bleNotifyController = StreamController<String>.broadcast();
   StreamSubscription<List<int>>? _valueSubscription;
+  StreamSubscription<BluetoothConnectionState>? _connectionSubscription;
 
   @override
   void dispose() {
     _scanSubscription?.cancel();
     _valueSubscription?.cancel();
+    _connectionSubscription?.cancel();
     _bleNotifyController.close();
     super.dispose();
   }
@@ -184,6 +189,8 @@ class _MainScreenState extends State<MainScreen> {
       await FlutterBluePlus.stopScan();
       await _scanSubscription?.cancel();
       _valueSubscription?.cancel();
+      await _connectionSubscription?.cancel();
+      _connectionSubscription = null;
       if (targetDevice != null) {
         await targetDevice!.disconnect();
       }
@@ -270,11 +277,62 @@ class _MainScreenState extends State<MainScreen> {
                         if (value.isNotEmpty) {
                           String message = utf8.decode(value).trim();
                           debugPrint(">>> 📥 BLE Notification Received: $message");
+
+                          // ตรวจสอบค่าสุขภาพและเซนเซอร์ (Health/Sensor Alert)
+                          try {
+                            if (message.startsWith('{') && message.endsWith('}')) {
+                              final Map<String, dynamic> data = jsonDecode(message);
+                              final hr = double.tryParse(data['hr']?.toString() ?? '0');
+                              final spo2 = double.tryParse(data['spo2']?.toString() ?? '0');
+                              final temp = double.tryParse(data['temp']?.toString() ?? '0');
+                              final hum = double.tryParse(data['hum']?.toString() ?? '0');
+                              NotificationService.instance.checkAndAlertSensorData(
+                                heartRate: hr,
+                                spO2: spo2,
+                                temperature: temp,
+                              );
+
+                              // 🌡️ แจ้งเตือนผลการวัดอุณหภูมิและความชื้น
+                              if ((temp != null && temp > 0) || (hum != null && hum > 0)) {
+                                NotificationService.instance.showTempHumidityAlert(
+                                  temperature: temp ?? 0.0,
+                                  humidity: hum ?? 0.0,
+                                );
+                              }
+                            }
+                          } catch (_) {}
+
+                          // ตรวจสอบข้อความเมื่อ Buzzer ของ ESP32 ทำงานครบเวลา (DEL_T:)
+                          if (message.startsWith("DEL_T:")) {
+                            String deletedText = message.substring(6).trim();
+                            NotificationService.instance.showNotification(
+                              id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+                              title: '📋 ถึงเวลาทำกิจกรรมแล้ว! (Smart Keychain)',
+                              body: deletedText,
+                              payload: 'TODO_DEL_T',
+                            );
+                          }
+
                           // ยิงข้อความที่ได้จาก ESP32 เข้า StreamController
                           _bleNotifyController.add(message);
                         }
                       });
                     }
+
+                    // 🚨 Anti-Lost Alert: ดักจับเหตุการณ์สัญญาณขาดหาย/หลุดระยะ
+                    _connectionSubscription?.cancel();
+                    _connectionSubscription = targetDevice!.connectionState.listen((state) {
+                      if (state == BluetoothConnectionState.disconnected && isConnected) {
+                        debugPrint("🚨 [Anti-Lost] BLE Disconnected from $deviceName!");
+                        if (mounted) {
+                          setState(() {
+                            isConnected = false;
+                            targetCharacteristic = null;
+                          });
+                        }
+                        NotificationService.instance.showAntiLostAlert(deviceName: deviceName);
+                      }
+                    });
 
                     if (mounted) {
                       setState(() {

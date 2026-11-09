@@ -460,7 +460,7 @@ class _TftImageSectionState extends State<_TftImageSection> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'รองรับ JPG, PNG (ระบบจะย่อขนาดเข้าจอ LCD 240x280 อัตโนมัติ)',
+                'รองรับ JPG, PNG (ระบบจะย่อขนาดเข้าจอ LCD 240x320 อัตโนมัติ)',
                 style: TextStyle(
                   fontSize: 11,
                   color: Color(0xFF64748B),
@@ -601,7 +601,7 @@ class _TftImageSectionState extends State<_TftImageSection> {
           ),
           SizedBox(height: 2),
           Text(
-            '240 x 280 TFT LCD',
+            '240 x 320 TFT LCD',
             style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8)),
           ),
         ],
@@ -904,7 +904,7 @@ class _TftQrSectionState extends State<_TftQrSection> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'รองรับ JPG, PNG (ระบบจะปรับสัดส่วนเข้าหน้าจอ LCD 240x280)',
+                'รองรับ JPG, PNG (ระบบจะปรับสัดส่วนเข้าหน้าจอ LCD 240x320)',
                 style: TextStyle(
                   fontSize: 11,
                   color: Color(0xFF64748B),
@@ -962,7 +962,7 @@ class _TftQrSectionState extends State<_TftQrSection> {
           ),
           SizedBox(height: 2),
           Text(
-            '240 x 280 TFT LCD',
+            '240 x 320 TFT LCD',
             style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8)),
           ),
         ],
